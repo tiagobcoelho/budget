@@ -1,0 +1,71 @@
+// Prisma schema generated from existing Drizzle models
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String         @id @default(uuid()) @db.Uuid
+  clerkId    String         @unique @db.VarChar(255)
+  email      String         @unique @db.VarChar(255)
+  firstName  String?        @db.VarChar(255)
+  lastName   String?        @db.VarChar(255)
+  imageUrl   String?
+  createdAt  DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime       @default(now()) @db.Timestamp(6)
+
+  subscriptions Subscription[]
+  conversations  Conversation[]
+}
+
+model Subscription {
+  id                     String   @id @default(uuid()) @db.Uuid
+  userId                 String   @db.Uuid
+  stripeCustomerId       String   @db.VarChar(255)
+  stripeSubscriptionId   String   @db.VarChar(255)
+  stripePriceId          String   @db.VarChar(255)
+  stripeCurrentPeriodEnd DateTime @db.Timestamp(6)
+  status                 String   @db.VarChar(50)
+  plan                   String   @db.VarChar(50)
+  createdAt              DateTime @default(now()) @db.Timestamp(6)
+  updatedAt              DateTime @default(now()) @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([stripeSubscriptionId])
+}
+
+model Conversation {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String    @db.VarChar(255)
+  createdAt DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt DateTime  @default(now()) @db.Timestamp(6)
+
+  user     User      @relation(fields: [userId], references: [id])
+  messages Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id             String    @id @default(uuid()) @db.Uuid
+  conversationId String    @db.Uuid
+  role           String    @db.VarChar(50)
+  content        String
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @db.Timestamp(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+
