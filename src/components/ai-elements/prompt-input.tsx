@@ -678,7 +678,7 @@ export const PromptInput = ({
 
     // Convert blob URLs to data URLs asynchronously
     Promise.all(
-      files.map(async ({ id, ...item }) => {
+      files.map(async (item) => {
         if (item.url && item.url.startsWith('blob:')) {
           return {
             ...item,
@@ -711,6 +711,7 @@ export const PromptInput = ({
           }
         }
       } catch (error) {
+        console.error(error)
         // Don't clear on error - user may want to retry
       }
     })

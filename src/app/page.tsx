@@ -23,7 +23,6 @@ import {
   TrendingUp,
   DollarSign,
   Clock,
-  Sparkles,
 } from 'lucide-react'
 
 const fadeInUp = {

@@ -590,7 +590,7 @@ export async function* extractTransactionsFromImage(
   yield { type: 'progress', pageNumber, totalPages }
 
   try {
-    let transactions = await extractTransactionsFromVisualPage(
+    const transactions = await extractTransactionsFromVisualPage(
       imageBuffer,
       mimeType,
       categories,

@@ -16,13 +16,13 @@ export default function CategoriesPage() {
   const currencyCode =
     (preferences?.defaultCurrencyCode as string | undefined) ?? 'USD'
 
-  const expenseCategories = categories.filter((c: any) => c.type === 'EXPENSE')
-  const incomeCategories = categories.filter((c: any) => c.type === 'INCOME')
+  const expenseCategories = categories.filter((c) => c.type === 'EXPENSE')
+  const incomeCategories = categories.filter((c) => c.type === 'INCOME')
 
   // Calculate total expenses for percentage calculation
   const totalExpenses = useMemo(() => {
     return expenseCategories.reduce(
-      (sum, category: any) => sum + Number(category.totalAmount ?? 0),
+      (sum, category) => sum + Number(category.totalAmount ?? 0),
       0
     )
   }, [expenseCategories])
@@ -58,7 +58,7 @@ export default function CategoriesPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {expenseCategories.map((category: any) => {
+              {expenseCategories.map((category) => {
                 const transactionCount = category.transactionCount ?? 0
                 const totalAmount = Number(category.totalAmount ?? 0)
                 const avgMonthly = Number(category.avgMonthlyAmount ?? 0)
@@ -112,7 +112,7 @@ export default function CategoriesPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {incomeCategories.map((category: any) => {
+              {incomeCategories.map((category) => {
                 const transactionCount = category.transactionCount ?? 0
                 const totalAmount = Number(category.totalAmount ?? 0)
                 const avgMonthly = Number(category.avgMonthlyAmount ?? 0)

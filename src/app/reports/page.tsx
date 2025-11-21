@@ -27,6 +27,7 @@ import { trpc } from '@/lib/trpc/client'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { ReportPeriod } from '@prisma/client'
 
 export default function ReportsPage() {
   const router = useRouter()
@@ -158,11 +159,11 @@ export default function ReportsPage() {
               <ReportCard
                 key={report.id}
                 id={report.id}
-                period={report.period as any}
+                period={report.period}
                 startDate={new Date(report.startDate)}
                 endDate={new Date(report.endDate)}
-                status={report.status as any}
-                metrics={report.metrics as any}
+                status={report.status}
+                metrics={report.metrics}
               />
             ))}
           </div>
@@ -198,7 +199,7 @@ export default function ReportsPage() {
                 <Label>Period</Label>
                 <Select
                   value={period}
-                  onValueChange={(value: any) => setPeriod(value)}
+                  onValueChange={(value) => setPeriod(value as ReportPeriod)}
                 >
                   <SelectTrigger>
                     <SelectValue />

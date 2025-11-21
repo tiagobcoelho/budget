@@ -79,7 +79,7 @@ export function BudgetCopilot({
           {messages.length === 0 ? (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Hi! I'm your budget copilot. I can help you understand your
+                Hi! I&apos;m your budget copilot. I can help you understand your
                 spending, track your budgets, and give you financial insights.
               </p>
               <div className="space-y-2">

@@ -147,11 +147,6 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
                 chunk.data?.transaction
               ) {
                 allTransactions.push(chunk.data.transaction)
-                const duplicateSummary =
-                  chunk.data.transaction.duplicateOfSummary
-                const duplicateReason: string | undefined =
-                  chunk.data.transaction.duplicateReason
-
                 // Update progress with new transaction count
                 // Note: transaction chunks include pageNumber but not totalPages
                 setProgress((prev) => ({

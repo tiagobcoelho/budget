@@ -17,7 +17,6 @@ import { toast } from 'sonner'
 import { CheckCircle } from 'lucide-react'
 import { TransactionCard } from './transactions-card'
 import { TransactionGroupCard } from './transaction-group-card'
-import { cn } from '@/lib/utils'
 import { Transaction } from '@prisma/client'
 
 interface TransactionListProps {
@@ -45,10 +44,13 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   )
 
   // Filter to only show transactions that were just created
-  const allTransactions =
-    transactionsQuery.data?.items.filter((t) =>
-      transactionIds.includes(t.id)
-    ) || []
+  const allTransactions = useMemo(
+    () =>
+      transactionsQuery.data?.items.filter((t) =>
+        transactionIds.includes(t.id)
+      ) || [],
+    [transactionsQuery.data?.items, transactionIds]
+  )
 
   const transactionLookup = useMemo(() => {
     return new Map(

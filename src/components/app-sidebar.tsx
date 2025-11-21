@@ -7,14 +7,11 @@ import {
   BarChart3,
   Settings,
   TrendingUp,
-  Sun,
-  Moon,
   ChevronRight,
   CreditCard,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
 
 import {
   Sidebar,
@@ -31,10 +28,8 @@ import {
   SidebarMenuSubButton,
   SidebarFooter,
   useSidebar,
-  SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -77,8 +72,6 @@ const managementItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-  const [mounted, setMounted] = useState(false)
 
   // Fetch latest reports (limit to 5)
   const { data: reports = [] } = trpc.report.list.useQuery({})
@@ -87,29 +80,6 @@ export function AppSidebar() {
     title: formatPeriodLabel(new Date(report.startDate)),
     href: `/reports/${report.id}`,
   }))
-
-  useEffect(() => {
-    setMounted(true)
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null
-    const prefersDark = window.matchMedia(
-      '(prefers-color-scheme: dark)'
-    ).matches
-    const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light')
-    setTheme(initialTheme)
-    document.documentElement.classList.toggle('dark', initialTheme === 'dark')
-  }, [])
-
-  const setLightTheme = () => {
-    setTheme('light')
-    localStorage.setItem('theme', 'light')
-    document.documentElement.classList.remove('dark')
-  }
-
-  const setDarkTheme = () => {
-    setTheme('dark')
-    localStorage.setItem('theme', 'dark')
-    document.documentElement.classList.add('dark')
-  }
 
   const { open, setOpen } = useSidebar()
 

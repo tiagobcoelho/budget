@@ -12,20 +12,6 @@ import { getCategoryColor } from '@/lib/category-colors'
 import { toast } from 'sonner'
 import { formatCurrency } from '@/lib/format'
 import { trpc } from '@/lib/trpc/client'
-// Helper to safely get spent amount from budget
-function getSpent(budget: { spent?: number }): number {
-  return Number(budget.spent || 0)
-}
-
-// Helper to safely get amount from budget (handles Decimal type)
-function getAmount(budget: {
-  amount: number | { toString: () => string }
-}): number {
-  if (typeof budget.amount === 'number') {
-    return budget.amount
-  }
-  return Number(budget.amount.toString())
-}
 
 function toNumber(
   value: number | { toString: () => string } | undefined
@@ -159,23 +145,6 @@ export default function BudgetsPage() {
     await reactivateDefinition.mutateAsync({ id: definitionId })
   }
 
-  // Group budgets by category
-  const budgetsByCategory = useMemo(() => {
-    if (!budgets) return new Map<string, NonNullable<typeof budgets>>()
-
-    const grouped = new Map<string, NonNullable<typeof budgets>>()
-
-    budgets.forEach((budget) => {
-      const categoryId = budget.categoryId
-      if (!grouped.has(categoryId)) {
-        grouped.set(categoryId, [])
-      }
-      grouped.get(categoryId)!.push(budget)
-    })
-
-    return grouped
-  }, [budgets])
-
   const activeDefinitions = useMemo(
     () => (definitions || []).filter((definition) => definition.isActive),
     [definitions]
@@ -219,27 +188,6 @@ export default function BudgetsPage() {
       }),
     [sortedDefinitions, totalDefinitionBudget]
   )
-
-  // Calculate aggregate totals for all budgets
-  const { totalAllocated, totalSpent, overallProgress } = useMemo(() => {
-    if (!budgets)
-      return { totalAllocated: 0, totalSpent: 0, overallProgress: 0 }
-
-    let allocated = 0
-    let spent = 0
-
-    budgets.forEach((budget) => {
-      allocated += getAmount(budget)
-      spent += getSpent(budget)
-    })
-
-    const progress = allocated > 0 ? (spent / allocated) * 100 : 0
-    return {
-      totalAllocated: allocated,
-      totalSpent: spent,
-      overallProgress: progress,
-    }
-  }, [budgets])
 
   return (
     <DashboardLayout>

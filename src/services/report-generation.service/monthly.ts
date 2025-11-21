@@ -20,8 +20,7 @@ export async function generateReport(
   categories: CategoryData[],
   budgets: BudgetData[],
   accounts: AccountData[],
-  currency: string = 'USD',
-  monthlyTransactions?: TransactionData[]
+  currency: string = 'USD'
 ): Promise<GeneratedReport> {
   const totalIncome = transactions
     .filter((t) => t.type === 'INCOME')
