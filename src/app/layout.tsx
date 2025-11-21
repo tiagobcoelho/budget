@@ -9,8 +9,17 @@ import { ThemeSync } from '@/components/theme-sync'
 import { ClerkProvider } from '@clerk/nextjs'
 import { TRPCProvider } from '@/lib/trpc/Provider'
 
-const _geist = Geist({ subsets: ['latin'] })
-const _geistMono = Geist_Mono({ subsets: ['latin'] })
+const geist = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Budget Planner - Track Your Finances',
@@ -26,7 +35,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`font-sans antialiased`}>
+      <body
+        className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}
+      >
         <ClerkProvider>
           <TRPCProvider>
             <ThemeProvider
