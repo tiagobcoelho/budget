@@ -3,11 +3,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Calendar, TrendingUp, TrendingDown, ArrowRight } from 'lucide-react'
+import { Calendar, ArrowRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { ReportStatus, ReportPeriod } from '@/lib/types'
 import Link from 'next/link'
-import { trpc } from '@/lib/trpc/client'
+// import { trpc } from '@/lib/trpc/client'
 
 interface ReportCardProps {
   id: string
@@ -50,17 +50,8 @@ export function ReportCard({
   startDate,
   endDate,
   status,
-  metrics,
 }: ReportCardProps) {
-  const { data: preference } = trpc.preference.get.useQuery()
-  const currency = preference?.defaultCurrencyCode || 'USD'
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-    }).format(amount)
-  }
+  // const { data: preference } = trpc.preference.get.useQuery()
 
   return (
     <Card>
@@ -81,48 +72,6 @@ export function ReportCard({
               {format(new Date(endDate), 'MMM d, yyyy')}
             </span>
           </div>
-
-          {status === 'COMPLETED' && metrics && (
-            <div className="grid grid-cols-3 gap-4 pt-2">
-              <div>
-                <p className="text-xs text-muted-foreground">Income</p>
-                <p className="text-sm font-semibold text-emerald-600">
-                  {metrics.totalIncome
-                    ? formatCurrency(metrics.totalIncome)
-                    : 'N/A'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Expenses</p>
-                <p className="text-sm font-semibold text-red-700">
-                  {metrics.totalExpenses
-                    ? formatCurrency(metrics.totalExpenses)
-                    : 'N/A'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Net</p>
-                <div className="flex items-center gap-1">
-                  {metrics.netChange !== undefined && metrics.netChange >= 0 ? (
-                    <TrendingUp className="h-3 w-3 text-emerald-600" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-red-700" />
-                  )}
-                  <p
-                    className={`text-sm font-semibold ${
-                      metrics.netChange !== undefined && metrics.netChange >= 0
-                        ? 'text-emerald-600'
-                        : 'text-red-700'
-                    }`}
-                  >
-                    {metrics.netChange !== undefined
-                      ? formatCurrency(metrics.netChange)
-                      : 'N/A'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {status === 'COMPLETED' && (
             <Link href={`/reports/${id}`}>
