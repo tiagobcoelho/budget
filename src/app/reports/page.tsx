@@ -163,7 +163,6 @@ export default function ReportsPage() {
                 startDate={new Date(report.startDate)}
                 endDate={new Date(report.endDate)}
                 status={report.status}
-                metrics={report.metrics}
               />
             ))}
           </div>
