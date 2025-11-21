@@ -1,39 +1,49 @@
-import { ClerkProvider } from '@clerk/nextjs'
-import { ThemeProvider } from 'next-themes'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/next'
-import { TRPCProvider } from '@/lib/trpc/Provider'
+import type React from 'react'
+import type { Metadata } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
+import { Toaster } from '@/components/ui/sonner'
+import { ThemeProvider } from '@/components/theme-provider'
+import { ThemeSync } from '@/components/theme-sync'
+import { ClerkProvider } from '@clerk/nextjs'
+import { TRPCProvider } from '@/lib/trpc/Provider'
 
-export const metadata = {
-  title: 'SaaS Starter',
+const _geist = Geist({ subsets: ['latin'] })
+const _geistMono = Geist_Mono({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'Budget Planner - Track Your Finances',
   description:
-    'A modern SaaS starter built with Next.js, Clerk, Stripe, and AI',
+    'A modern budget planning app to manage your income, expenses, and financial goals',
+  generator: 'v0.app',
 }
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
-    <ClerkProvider dynamic>
-      <html lang="en" suppressHydrationWarning>
-        <body>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`font-sans antialiased`}>
+        <ClerkProvider>
           <TRPCProvider>
             <ThemeProvider
               attribute="class"
               defaultTheme="system"
               enableSystem
               disableTransitionOnChange
+              storageKey="budget-theme"
             >
+              <ThemeSync />
               {children}
-              <Analytics />
-              <SpeedInsights />
+              <Toaster position="top-center" />
             </ThemeProvider>
           </TRPCProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+          <Analytics />
+        </ClerkProvider>
+      </body>
+    </html>
   )
 }

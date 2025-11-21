@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { type Context } from './context'
+import { HouseholdService } from '@/services/household.service'
 import superjson from 'superjson'
 
 const t = initTRPC.context<Context>().create({
@@ -27,6 +28,30 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
       ...ctx,
       user: ctx.user,
       clerkId: ctx.clerkId,
+    },
+  })
+})
+
+/**
+ * Household procedure - requires authentication and household membership
+ * Gets user's household and adds householdId to context
+ */
+export const householdProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (!ctx.user || !ctx.clerkId) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' })
+  }
+
+  // Get or create user's household
+  const household = await HouseholdService.getOrCreatePersonalHousehold(
+    ctx.user.id
+  )
+
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.user,
+      clerkId: ctx.clerkId,
+      householdId: household.id,
     },
   })
 })

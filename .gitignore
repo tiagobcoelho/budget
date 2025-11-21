@@ -45,3 +45,5 @@ drizzle/
 
 # OS
 Thumbs.db
+
+venv/

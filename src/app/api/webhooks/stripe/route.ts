@@ -38,19 +38,27 @@ export async function POST(req: NextRequest) {
         })
 
         if (user) {
-          await db.subscription.create({
-            data: {
-              userId: user.id,
-              stripeCustomerId: session.customer as string,
-              stripeSubscriptionId: subscription.id,
-              stripePriceId: subscription.items.data[0].price.id,
-              stripeCurrentPeriodEnd: new Date(
-                subscription.current_period_end * 1000
-              ),
-              status: subscription.status,
-              plan: (session.metadata?.plan as string) || 'PRO',
-            },
+          // Get user's household
+          const household = await db.householdMember.findFirst({
+            where: { userId: user.id },
+            include: { household: true },
           })
+
+          if (household) {
+            await db.subscription.create({
+              data: {
+                householdId: household.household.id,
+                stripeCustomerId: session.customer as string,
+                stripeSubscriptionId: subscription.id,
+                stripePriceId: subscription.items.data[0].price.id,
+                stripeCurrentPeriodEnd: new Date(
+                  subscription.current_period_end * 1000
+                ),
+                status: subscription.status,
+                plan: (session.metadata?.plan as string) || 'PRO',
+              },
+            })
+          }
         }
       }
       break
@@ -81,16 +89,16 @@ export async function POST(req: NextRequest) {
     case 'customer.subscription.updated': {
       const subscription = event.data.object as Stripe.Subscription
 
-      await db
-        .update(subscriptions)
-        .set({
+      await db.subscription.updateMany({
+        where: { stripeSubscriptionId: subscription.id },
+        data: {
           stripeCurrentPeriodEnd: new Date(
             subscription.current_period_end * 1000
           ),
           status: subscription.status,
           updatedAt: new Date(),
-        })
-        .where(eq(subscriptions.stripeSubscriptionId, subscription.id))
+        },
+      })
       break
     }
 

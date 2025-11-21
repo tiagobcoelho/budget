@@ -1,7 +1,16 @@
-import { z } from 'zod'
 import { router, protectedProcedure } from '../trpc'
 import { ConversationService } from '@/services/conversation.service'
 import { TRPCError } from '@trpc/server'
+import {
+  getConversationByIdSchema,
+  getConversationWithMessagesSchema,
+  createConversationSchema,
+  renameConversationSchema,
+  deleteConversationSchema,
+  getMessagesSchema,
+  addMessageSchema,
+  addMessagesSchema,
+} from '../schemas/conversation.schema'
 
 export const conversationRouter = router({
   /**
@@ -15,11 +24,7 @@ export const conversationRouter = router({
    * Get a specific conversation by ID
    */
   getById: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      })
-    )
+    .input(getConversationByIdSchema)
     .query(async ({ ctx, input }) => {
       const conversation = await ConversationService.getConversationById(
         input.id,
@@ -40,11 +45,7 @@ export const conversationRouter = router({
    * Get conversation with all messages
    */
   getWithMessages: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      })
-    )
+    .input(getConversationWithMessagesSchema)
     .query(async ({ ctx, input }) => {
       const result = await ConversationService.getConversationWithMessages(
         input.id,
@@ -65,11 +66,7 @@ export const conversationRouter = router({
    * Create a new conversation
    */
   create: protectedProcedure
-    .input(
-      z.object({
-        title: z.string().min(1).max(255),
-      })
-    )
+    .input(createConversationSchema)
     .mutation(async ({ ctx, input }) => {
       return ConversationService.createConversation({
         userId: ctx.user.id,
@@ -81,12 +78,7 @@ export const conversationRouter = router({
    * Update conversation title
    */
   rename: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        title: z.string().min(1).max(255),
-      })
-    )
+    .input(renameConversationSchema)
     .mutation(async ({ ctx, input }) => {
       const conversation = await ConversationService.updateConversationTitle(
         input.id,
@@ -108,11 +100,7 @@ export const conversationRouter = router({
    * Delete a conversation
    */
   delete: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      })
-    )
+    .input(deleteConversationSchema)
     .mutation(async ({ ctx, input }) => {
       const success = await ConversationService.deleteConversation(
         input.id,
@@ -133,11 +121,7 @@ export const conversationRouter = router({
    * Get messages for a conversation
    */
   getMessages: protectedProcedure
-    .input(
-      z.object({
-        conversationId: z.string().uuid(),
-      })
-    )
+    .input(getMessagesSchema)
     .query(async ({ ctx, input }) => {
       return ConversationService.getConversationMessages(
         input.conversationId,
@@ -149,14 +133,7 @@ export const conversationRouter = router({
    * Add a message to a conversation
    */
   addMessage: protectedProcedure
-    .input(
-      z.object({
-        conversationId: z.string().uuid(),
-        role: z.enum(['user', 'assistant', 'system']),
-        content: z.string(),
-        metadata: z.any().optional(),
-      })
-    )
+    .input(addMessageSchema)
     .mutation(async ({ input }) => {
       return ConversationService.addMessage({
         conversationId: input.conversationId,
@@ -170,18 +147,7 @@ export const conversationRouter = router({
    * Add multiple messages to a conversation (batch)
    */
   addMessages: protectedProcedure
-    .input(
-      z.object({
-        conversationId: z.string().uuid(),
-        messages: z.array(
-          z.object({
-            role: z.enum(['user', 'assistant', 'system']),
-            content: z.string(),
-            metadata: z.any().optional(),
-          })
-        ),
-      })
-    )
+    .input(addMessagesSchema)
     .mutation(async ({ input }) => {
       const messagesToInsert = input.messages.map((msg) => ({
         conversationId: input.conversationId,

@@ -1,6 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)'])
+const isProtectedRoute = createRouteMatcher([
+  '/dashboard(.*)',
+  '/transactions(.*)',
+  '/budgets(.*)',
+  '/categories(.*)',
+  '/reports(.*)',
+  '/settings(.*)',
+  '/onboarding(.*)',
+])
 
 const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)'])
 
@@ -11,6 +19,8 @@ export default clerkMiddleware(async (auth, req) => {
 
   if (isProtectedRoute(req)) {
     await auth.protect()
+    // Note: Onboarding check is handled client-side in dashboard/page.tsx
+    // to avoid Prisma calls in Edge runtime middleware
   }
 })
 
