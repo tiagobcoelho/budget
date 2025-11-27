@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +13,18 @@ import { toast } from 'sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { format } from 'date-fns'
 import { formatCurrency } from '@/lib/format'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { User } from 'lucide-react'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 
 // Helper function to check if a transaction is incomplete
 export const isTransactionIncomplete = (transaction: Transaction): boolean => {
@@ -36,11 +48,17 @@ type TransactionWithRelations = Transaction & {
     Transaction,
     'id' | 'description' | 'amount' | 'occurredAt'
   > | null
+  user?: {
+    id: string
+    firstName: string | null
+    lastName: string | null
+    email: string
+    imageUrl: string | null
+  } | null
 }
 
 interface TransactionCardProps {
   transaction: TransactionWithRelations
-  allowDelete?: boolean
   noCardWrapper?: boolean
   showDuplicateActions?: boolean
   onUnlink?: () => void
@@ -49,7 +67,6 @@ interface TransactionCardProps {
 
 export function TransactionCard({
   transaction,
-  allowDelete = false,
   noCardWrapper = false,
   showDuplicateActions = false,
   onUnlink,
@@ -63,8 +80,10 @@ export function TransactionCard({
   const { data: categories = [] } = trpc.category.list.useQuery()
   const { data: accounts = [] } = trpc.account.list.useQuery()
   const { data: preferences } = trpc.preference.get.useQuery()
+  const { data: household } = trpc.household.current.useQuery()
   const currencyCode =
     (preferences?.defaultCurrencyCode as string | undefined) ?? 'USD'
+  const showOwnershipBadges = (household?.members?.length ?? 0) > 1
 
   const markAsReviewed = trpc.transaction.markAsReviewed.useMutation({
     onSuccess: () => {
@@ -110,12 +129,10 @@ export function TransactionCard({
     })
   }
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     // Always allow deletion for duplicates, or if allowDelete is true
-    if (showDuplicateActions || allowDelete) {
-      deleteTransaction.mutate({ id: transaction.id })
-    }
-  }
+    deleteTransaction.mutate({ id: transaction.id })
+  }, [deleteTransaction, transaction.id])
 
   // Memoized computed values
   const categoryName = useMemo(() => {
@@ -192,6 +209,61 @@ export function TransactionCard({
     note: transaction.note || '',
   }
 
+  const deleteButton = useMemo(
+    () => (
+      <Dialog>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                title="Delete transaction"
+                disabled={deleteTransaction.isPending}
+              >
+                <Trash className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Delete transaction</p>
+          </TooltipContent>
+        </Tooltip>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this transaction?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. You will permanently remove{' '}
+              {transaction.description || 'this transaction'}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={deleteTransaction.isPending}
+              >
+                Cancel
+              </Button>
+            </DialogClose>
+            <DialogClose asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleteTransaction.isPending}
+              >
+                Delete
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    ),
+    [transaction, deleteTransaction, handleDelete]
+  )
+
   if (isEditing) {
     return (
       <Card className="p-4">
@@ -233,12 +305,42 @@ export function TransactionCard({
   const isIncomplete = isTransactionIncomplete(transaction)
   const hasError = isIncomplete || isUncategorized
   const isUnreviewed = transaction.reviewed === false
-  const isPossibleDuplicate = transaction.possibleDuplicate === true
+  const hasDuplicateReference = Boolean(
+    transaction.duplicateOfTransactionId || transaction.duplicateOf
+  )
+  const isPossibleDuplicate =
+    transaction.possibleDuplicate === true && hasDuplicateReference
+
+  const getUserDisplayName = (user: {
+    firstName: string | null
+    lastName: string | null
+    email: string
+  }) => {
+    if (user.firstName) {
+      return user.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user.firstName
+    }
+    return user.email
+  }
+
+  const getUserInitials = (user: {
+    firstName: string | null
+    lastName: string | null
+    email: string
+  }) => {
+    if (user.firstName) {
+      return user.lastName
+        ? `${user.firstName[0]}${user.lastName[0]}`
+        : user.firstName[0]
+    }
+    return user.email[0].toUpperCase()
+  }
 
   const content = (
     <div className="flex items-center justify-between gap-4">
       <div className="flex-1 space-y-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {hasError && (
             <Badge variant="destructive" className="text-xs shrink-0">
               Incomplete
@@ -262,6 +364,47 @@ export function TransactionCard({
               Unreviewed
             </Badge>
           )}
+          {showOwnershipBadges && transaction.user && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className="text-xs shrink-0 flex items-center gap-1"
+                >
+                  <Avatar className="h-3 w-3">
+                    <AvatarImage src={transaction.user.imageUrl ?? undefined} />
+                    <AvatarFallback className="text-[8px]">
+                      {getUserInitials(transaction.user)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {getUserDisplayName(transaction.user)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Transaction belongs to {getUserDisplayName(transaction.user)}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {showOwnershipBadges &&
+            !transaction.user &&
+            transaction.userId === null && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="text-xs shrink-0 flex items-center gap-1"
+                  >
+                    <User className="h-3 w-3" />
+                    Shared
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Shared transaction</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
         </div>
         <div>
           <span className="font-medium text-foreground">
@@ -371,22 +514,7 @@ export function TransactionCard({
                 </TooltipContent>
               </Tooltip>
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleDelete}
-                  title="Delete transaction"
-                  disabled={deleteTransaction.isPending}
-                >
-                  <Trash className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Delete transaction</p>
-              </TooltipContent>
-            </Tooltip>
+            {deleteButton}
           </>
         ) : (
           <>
@@ -423,24 +551,7 @@ export function TransactionCard({
                 <p>Edit transaction</p>
               </TooltipContent>
             </Tooltip>
-            {allowDelete && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleDelete}
-                    title="Delete transaction"
-                    disabled={deleteTransaction.isPending}
-                  >
-                    <Trash className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Delete transaction</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+            {deleteButton}
           </>
         )}
       </div>

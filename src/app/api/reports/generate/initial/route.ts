@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server'
 import { db } from '@/db'
 import { ReportService } from '@/services/report.service'
 import { generateInitialReport } from '@/services/report-generation.service/initial'
+import { generateUpdatedFinancialProfile } from '@/services/financial-profile.service'
 import { HouseholdService } from '@/services/household.service'
 import {
   reportDataSchema,
@@ -11,6 +12,7 @@ import {
 import { BudgetSuggestionType } from '@/services/report-generation.service/types'
 import { BudgetService } from '@/services/budget.service'
 import { randomUUID } from 'crypto'
+import { InputJsonValue } from '@prisma/client/runtime/library'
 
 export async function POST(req: NextRequest) {
   try {
@@ -215,16 +217,42 @@ export async function POST(req: NextRequest) {
           totals: snapshot.totals,
           categories: snapshot.categories,
           llm: {
-            summary: generatedContent?.summary ?? [],
-            insights: generatedContent?.insights ?? [],
-            suggestionsText: generatedContent?.recommendations ?? [],
             budgetSuggestions: budgetSuggestionsWithBudgets,
+            behaviorPatterns: generatedContent?.behaviorPatterns ?? null,
+            risks: generatedContent?.risks ?? null,
+            opportunities: generatedContent?.opportunities ?? null,
           },
           meta: { currencyCode: currency },
         }
 
         reportDataSchema.parse(data)
         await ReportService.setData(reportId, data, snapshot.transactionCount)
+
+        try {
+          const updatedProfile = await generateUpdatedFinancialProfile({
+            existingProfile: null,
+            startDate,
+            endDate,
+            currency,
+            transactions: transactionData,
+            categories: categoryData,
+            budgets: [],
+            accounts: accountData,
+            householdName: household.name,
+          })
+
+          await db.household.update({
+            where: { id: household.id },
+            data: {
+              financialProfile: updatedProfile as InputJsonValue,
+            },
+          })
+        } catch (profileError) {
+          console.error(
+            'Failed to refresh household financial profile',
+            profileError
+          )
+        }
 
         // Update status to COMPLETED
         await ReportService.updateStatus(reportId, 'COMPLETED')

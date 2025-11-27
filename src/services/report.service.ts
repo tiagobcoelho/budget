@@ -1,10 +1,20 @@
 import { db } from '@/db'
-import { Prisma, Transaction, type Report } from '@prisma/client'
+import {
+  Prisma,
+  ReportPeriod,
+  Transaction,
+  type Budget,
+  type Category,
+  type Report,
+} from '@prisma/client'
 import {
   reportDataSchema,
   type ReportData,
 } from '@/server/trpc/schemas/report.schema'
-import { BudgetSuggestionStatus } from './report-generation.service/types'
+import {
+  BudgetSuggestionStatus,
+  type TransactionData,
+} from './report-generation.service/types'
 // Note: LLM orchestration remains in the API route; this service exposes
 // only calculations and persistence helpers.
 
@@ -23,6 +33,10 @@ export interface ReportListInput {
   to?: string
   status?: 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED'
 }
+
+type TransactionWithRelations = Prisma.TransactionGetPayload<{
+  include: { category: true; fromAccount: true; toAccount: true }
+}>
 
 export class ReportService {
   static async list(
@@ -147,32 +161,148 @@ export class ReportService {
     }
   }
 
+  /**
+   * Fetches all raw data needed to build a period report in one go so API routes
+   * stay thin. Returns current-period entities plus contextual data (previous
+   * period + rolling window) for analytics calculations.
+   */
+  static async getGenerationData(params: {
+    householdId: string
+    period: ReportPeriod
+    startDate: Date
+    endDate: Date
+  }) {
+    const { householdId, period, startDate, endDate } = params
+
+    const monthRange =
+      period === ReportPeriod.WEEKLY
+        ? ReportService.getMonthRange(startDate, endDate)
+        : null
+
+    const previousMonthRange =
+      period === ReportPeriod.MONTHLY
+        ? ReportService.getPreviousMonthRange(startDate)
+        : null
+
+    const rollingRange =
+      period === ReportPeriod.MONTHLY
+        ? ReportService.getRollingRange(endDate, 90)
+        : null
+
+    const [transactions, categories, accounts, budgets, householdRecord] =
+      await Promise.all([
+        ReportService.fetchTransactionsWithRelations({
+          householdId,
+          startDate,
+          endDate,
+        }),
+        db.category.findMany({ where: { householdId } }),
+        db.account.findMany({ where: { householdId } }),
+        db.budget.findMany({
+          where: {
+            householdId,
+            AND: [
+              {
+                startDate: {
+                  lte:
+                    period === ReportPeriod.WEEKLY && monthRange
+                      ? monthRange.end
+                      : endDate,
+                },
+              },
+              {
+                endDate: {
+                  gte:
+                    period === ReportPeriod.WEEKLY && monthRange
+                      ? monthRange.start
+                      : startDate,
+                },
+              },
+            ],
+          },
+          include: { category: true },
+        }),
+        db.household.findUnique({
+          where: { id: householdId },
+          select: { financialProfile: true },
+        }),
+      ])
+
+    let monthlyTransactions: TransactionData[] = []
+    if (period === ReportPeriod.WEEKLY && monthRange) {
+      const monthlyTxns = await ReportService.fetchTransactionsWithRelations({
+        householdId,
+        startDate: monthRange.start,
+        endDate: monthRange.end,
+      })
+      monthlyTransactions = ReportService.mapTransactionsToData(monthlyTxns)
+    }
+
+    let previousPeriodTransactions: TransactionData[] = []
+    if (previousMonthRange) {
+      const prevTxns = await ReportService.fetchTransactionsWithRelations({
+        householdId,
+        startDate: previousMonthRange.start,
+        endDate: previousMonthRange.end,
+      })
+      previousPeriodTransactions = ReportService.mapTransactionsToData(prevTxns)
+    }
+
+    let rollingTransactions: TransactionData[] = []
+    if (rollingRange) {
+      const rollingTxns = await ReportService.fetchTransactionsWithRelations({
+        householdId,
+        startDate: rollingRange.start,
+        endDate: rollingRange.end,
+      })
+      rollingTransactions = ReportService.mapTransactionsToData(rollingTxns)
+    }
+
+    return {
+      transactions,
+      categories,
+      accounts,
+      budgets,
+      monthlyTransactions,
+      previousPeriodTransactions,
+      rollingTransactions,
+      financialProfile: householdRecord?.financialProfile ?? null,
+    }
+  }
+
   // Compute totals and category breakdown (no LLM, no persistence)
   static async computeSnapshot(
     householdId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    preloaded?: {
+      transactions?: Transaction[]
+      categories?: Category[]
+      budgets?: Budget[]
+    }
   ) {
     const [transactions, categories, budgets] = await Promise.all([
-      db.transaction.findMany({
-        where: {
-          householdId,
-          occurredAt: { gte: startDate, lte: endDate },
-        },
-        include: { category: true },
-        orderBy: { occurredAt: 'desc' },
-      }),
-      db.category.findMany({ where: { householdId } }),
-      db.budget.findMany({
-        where: {
-          householdId,
-          AND: [
-            { startDate: { lte: endDate } },
-            { endDate: { gte: startDate } },
-          ],
-        },
-        include: { category: true },
-      }),
+      preloaded?.transactions ??
+        db.transaction.findMany({
+          where: {
+            householdId,
+            occurredAt: { gte: startDate, lte: endDate },
+          },
+          include: { category: true },
+          orderBy: { occurredAt: 'desc' },
+        }),
+      preloaded?.categories ?? db.category.findMany({ where: { householdId } }),
+      preloaded?.budgets ??
+        db.budget.findMany({
+          where: {
+            householdId,
+            AND: [
+              { startDate: { lte: endDate } },
+              { endDate: { gte: startDate } },
+            ],
+          },
+          include: { category: true },
+        }),
     ])
 
     // Totals
@@ -388,5 +518,71 @@ export class ReportService {
     )
 
     return this.getById(householdId, params.reportId)
+  }
+
+  private static async fetchTransactionsWithRelations(params: {
+    householdId: string
+    startDate: Date
+    endDate: Date
+  }): Promise<TransactionWithRelations[]> {
+    return db.transaction.findMany({
+      where: {
+        householdId: params.householdId,
+        occurredAt: { gte: params.startDate, lte: params.endDate },
+      },
+      include: { category: true, fromAccount: true, toAccount: true },
+      orderBy: { occurredAt: 'desc' },
+    })
+  }
+
+  private static mapTransactionsToData(
+    transactions: TransactionWithRelations[]
+  ): TransactionData[] {
+    return transactions.map((t) => ({
+      id: t.id,
+      type: t.type,
+      amount: Number(t.amount),
+      occurredAt: t.occurredAt.toISOString(),
+      description: t.description,
+      categoryId: t.categoryId,
+      categoryName: t.category?.name || null,
+    }))
+  }
+
+  private static getMonthRange(startDate: Date, endDate: Date) {
+    const monthStart = new Date(startDate)
+    monthStart.setDate(1)
+    monthStart.setHours(0, 0, 0, 0)
+
+    const monthEnd = new Date(endDate)
+    monthEnd.setMonth(monthEnd.getMonth() + 1)
+    monthEnd.setDate(0)
+    monthEnd.setHours(23, 59, 59, 999)
+
+    return { start: monthStart, end: monthEnd }
+  }
+
+  private static getPreviousMonthRange(startDate: Date) {
+    const prevStart = new Date(startDate)
+    prevStart.setMonth(prevStart.getMonth() - 1)
+    prevStart.setDate(1)
+    prevStart.setHours(0, 0, 0, 0)
+
+    const prevEnd = new Date(startDate)
+    prevEnd.setDate(0)
+    prevEnd.setHours(23, 59, 59, 999)
+
+    return { start: prevStart, end: prevEnd }
+  }
+
+  private static getRollingRange(endDate: Date, days: number) {
+    const start = new Date(endDate)
+    start.setDate(start.getDate() - days)
+    start.setHours(0, 0, 0, 0)
+
+    const end = new Date(endDate)
+    end.setHours(23, 59, 59, 999)
+
+    return { start, end }
   }
 }

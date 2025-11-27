@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     // Parse form data
     const formData = await req.formData()
     const file = formData.get('file') as File | null
+    const userIdParam = formData.get('userId') as string | null
 
     if (!file) {
       return new Response(JSON.stringify({ error: 'No file provided' }), {
@@ -69,6 +70,25 @@ export async function POST(req: NextRequest) {
         status: 404,
         headers: { 'Content-Type': 'application/json' },
       })
+    }
+
+    // Validate userId if provided (must be a member of the household)
+    let userId: string | null = null
+    if (userIdParam) {
+      // Verify the userId is a member of the household
+      const isMember = household.members.some((m) => m.user.id === userIdParam)
+      if (!isMember) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid user ID - not a household member' }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      }
+      userId = userIdParam
+    } else if (household.members.length === 1) {
+      userId = household.members[0].user.id
     }
 
     // Get user's categories, accounts, and recent transactions for matching
@@ -263,6 +283,7 @@ export async function POST(req: NextRequest) {
                     possibleDuplicate:
                       transactionPayload.possibleDuplicate ?? false,
                     duplicateOfTransactionId: duplicateReference.transactionId,
+                    userId: userId,
                   }
                 )
                 createdTransactionIds.push(created.id)

@@ -29,6 +29,13 @@ export const removeMemberSchema = z.object({
   userId: z.string().uuid(),
 })
 
+// Create Couple Household Input
+export const createCoupleHouseholdSchema = z.object({
+  partnerEmail: z.string().email(),
+  partnerFirstName: z.string().min(1),
+  partnerLastName: z.string().optional(),
+})
+
 // Type exports
 export type GetHouseholdByIdInput = z.infer<typeof getHouseholdByIdSchema>
 export type UpdateHouseholdInput = z.infer<typeof updateHouseholdSchema>
@@ -37,3 +44,6 @@ export type ListHouseholdMembersInput = z.infer<
 >
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>
 export type RemoveMemberInput = z.infer<typeof removeMemberSchema>
+export type CreateCoupleHouseholdInput = z.infer<
+  typeof createCoupleHouseholdSchema
+>

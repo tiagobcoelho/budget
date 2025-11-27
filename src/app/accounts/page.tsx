@@ -4,23 +4,10 @@ import { useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Plus,
-  Wallet,
-  CreditCard,
-  PiggyBank,
-  TrendingUp,
-  MoreVertical,
-} from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Plus, Wallet, CreditCard, PiggyBank, TrendingUp } from 'lucide-react'
+
 import { trpc } from '@/lib/trpc/client'
 import { formatCurrency } from '@/lib/format'
-import { formatDistanceToNow } from 'date-fns'
 
 // Map account types to icons
 const getAccountIcon = (type: string) => {
@@ -57,11 +44,6 @@ export default function AccountsPage() {
   }, [accounts, netWorth])
 
   const activeAccounts = accounts.length
-
-  const formatLastTransaction = (date: Date | null) => {
-    if (!date) return 'No transactions'
-    return formatDistanceToNow(new Date(date), { addSuffix: true })
-  }
 
   return (
     <DashboardLayout>
@@ -136,13 +118,7 @@ export default function AccountsPage() {
               <div className="space-y-3">
                 {accounts.map((account) => {
                   const Icon = getAccountIcon(account.type)
-                  const balance =
-                    account.balance ?? Number(account.initialBalance)
-                  const isNegative = balance < 0
                   const transactionCount = account.totalTransactions ?? 0
-                  const lastTransaction = formatLastTransaction(
-                    account.lastTransactionDate
-                  )
 
                   return (
                     <div
@@ -157,42 +133,8 @@ export default function AccountsPage() {
                           <p className="text-sm font-medium">{account.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {transactionCount} transaction
-                            {transactionCount !== 1 ? 's' : ''} • Last:{' '}
-                            {lastTransaction}
                           </p>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p
-                            className={`text-sm font-semibold ${isNegative ? 'text-destructive' : ''}`}
-                          >
-                            {formatCurrency(balance, currencyCode)}
-                          </p>
-                          <p className="text-xs capitalize text-muted-foreground">
-                            {account.type.toLowerCase()}
-                          </p>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                            >
-                              <MoreVertical className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem>Edit Account</DropdownMenuItem>
-                            <DropdownMenuItem>
-                              View Transactions
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive">
-                              Delete Account
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </div>
                     </div>
                   )

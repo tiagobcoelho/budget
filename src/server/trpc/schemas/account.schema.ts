@@ -22,6 +22,7 @@ export const createAccountSchema = z.object({
   type: accountTypeSchema,
   currencyCode: z.string().length(3).optional(),
   initialBalance: z.number().optional(),
+  userId: z.string().uuid().optional().nullable(),
 })
 
 // Update Account Input
@@ -31,6 +32,7 @@ export const updateAccountSchema = z.object({
   type: accountTypeSchema.optional(),
   currencyCode: z.string().length(3).optional(),
   initialBalance: z.number().optional(),
+  userId: z.string().uuid().optional().nullable(),
 })
 
 // Delete Account Input

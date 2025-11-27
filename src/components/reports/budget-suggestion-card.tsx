@@ -233,7 +233,9 @@ export function BudgetSuggestionCard({
                         </span>
                         <TrendingUp className="h-4 w-4 text-blue-500" />
                         <span className="text-sm font-medium">
-                          {formatCurrencyLocal(suggestion.suggestedChanges.amount)}
+                          {formatCurrencyLocal(
+                            suggestion.suggestedChanges.amount
+                          )}
                         </span>
                       </div>
                     </div>
@@ -282,13 +284,12 @@ export function BudgetSuggestionCard({
           </div>
 
           {isInitialVariant ? (
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-end">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setIsEditDialogOpen(true)}
                 disabled={actionPending || !budgetId}
-                className="flex-1"
               >
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Budget
@@ -298,20 +299,18 @@ export function BudgetSuggestionCard({
                 size="sm"
                 onClick={handleDeleteBudget}
                 disabled={actionPending || !budgetId}
-                className="flex-1"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
               </Button>
             </div>
           ) : (
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-end">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setIsEditDialogOpen(true)}
                 disabled={actionPending}
-                className="flex-1"
               >
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
@@ -321,7 +320,6 @@ export function BudgetSuggestionCard({
                 size="sm"
                 onClick={() => handleApprove()}
                 disabled={actionPending}
-                className="flex-1"
               >
                 <Check className="mr-2 h-4 w-4" />
                 Approve

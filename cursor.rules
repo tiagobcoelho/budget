@@ -1,0 +1,65 @@
+## Mission
+- Ship a polished multi-tenant budgeting/coaching app: dashboard pages live in `src/app/**/*`, AI helpers in `src/components/ai-elements`, and reporting flows under `src/app/reports` + `src/components/reports`.
+- Favor clarity over trickiness; document non-obvious behavior directly in the files you touch.
+
+## Stack & Entry Points
+- Next.js 15 App Router with Clerk auth (see `src/app/layout.tsx`, `src/middleware.ts`). Server Components by default; add `'use client'` only when hooks/event handlers are required.
+- API surface is tRPC (`src/app/api/trpc/[trpc]/route.ts`) backed by routers in `src/server/trpc/routers`. Use the exported `trpc` client (`src/lib/trpc/client.ts`) in React.
+- Database access flows through Prisma (`src/db/index.ts`) and service classes in `src/services/*`. Never call Prisma directly from React components.
+- Styling = Tailwind CSS v4 tokens + shadcn/ui primitives (`src/components/ui/*`). Theme variables live in `src/app/globals.css`; keep colors/radii in sync there.
+
+## Daily Workflow
+- Package manager is `pnpm` (workspace + lockfile enforced). Install deps with `pnpm install`; run app via `pnpm dev`; lint with `pnpm lint`.
+- Keep a local Postgres (connection strings are defined in `.env.example`). Use `pnpm db:push:dev` for quick schema syncing and `pnpm db:migrate` for real migrations.
+- Before pushing, run `pnpm lint` and exercise the page(s) you touched in the browser. If you modify Prisma schema, regenerate (`pnpm prisma generate`) and commit the migration.
+- Large features: start from a design note or issue, get buy-in on API shape, then land thin vertical slices.
+
+## Frontend Conventions
+- Pages live under `src/app/<route>/page.tsx`. Shared layouts (`DashboardLayout`, etc.) live in `src/components`. Prefer composing existing atoms/molecules instead of ad-hoc markup.
+- Fetch server data with tRPC hooks (`trpc.category.listWithMetrics.useQuery()` in `src/app/categories/page.tsx`) or Server Actions. Co-locate optimistic UI + React Query invalidations with the component that triggers the mutation.
+- Keep business logic inside services/hooks. React files should stay declarative and type-safe; reuse helpers like `formatCurrency` from `src/lib/format`.
+- Respect responsiveness baked into existing components (e.g., `DashboardLayout`, `ReportCard`). Match spacing system already used (Tailwind `space-y-*`, `gap-*`).
+
+## API + Services
+- New backend capabilities start in `src/services`. Route handlers/routers should call those services (see `CategoryService` and `categoryRouter`). Multi-tenant isolation must go through `householdProcedure` so that `ctx.householdId` is enforced.
+- Routers share `superjson` serialization; keep payloads serializable.
+- Expose mutations/queries only after adding corresponding zod schemas under `src/server/trpc/schemas`.
+
+## Database & Prisma
+- Schema resides in `prisma/schema.prisma`; migrations live in `prisma/migrations/*`.
+- The Prisma client picks `DATABASE_URL_DEV` when available (`src/db/index.ts`). Ensure `.env` mirrors `.env.local` so CLI commands work.
+- Never edit historical migrations. Create a new one with `pnpm db:migrate --name <change>` and commit both the schema + migration directory.
+- For multi-tenant tables, always include `householdId` filters in queries (services should enforce this).
+
+## Styling & UI
+- Tailwind tokens + custom properties are defined in `src/app/globals.css`. Extend or modify theme values there (light and `.dark` sections) instead of sprinkling hard-coded colors.
+- Use shadcn/ui components from `src/components/ui`. Add new primitives via the existing `components.json` registry to keep design tokens aligned.
+- Animations rely on `tw-animate-css`. Keep hover/transition effects subtle, matching existing patterns.
+
+## Environment & Secrets
+- `.env.example` documents required env vars (Clerk, Stripe, AI keys). Real secrets belong in `.env.local` / `.env`; never commit them.
+- When adding a new service, update `.env.example` + README with the required configuration.
+- Webhooks expect Clerk (`/api/webhooks/clerk`) and Stripe (`/api/webhooks/stripe`) secrets; mention any changes in PR descriptions.
+
+## Testing & QA
+- Minimum: `pnpm lint` passes and affected routes load without console errors.
+- For DB-impacting changes, run `pnpm db:push:dev` (or migrations) and exercise Prisma Studio (`pnpm db:studio:dev`) if data verification is needed.
+- Add unit/integration tests when touching critical logic (services, AI pipelines). Co-locate tests near the implementation.
+
+## Guardrails (Never / Always)
+- ❌ Do not bypass service layer with raw Prisma queries in React/routers.
+- ❌ Do not hard-code tenant IDs; always read from context (`ctx.householdId`).
+- ❌ Do not commit actual secrets, `.env*`, or local database files.
+- ✅ Keep component + service naming consistent (e.g., `ReportCard` pairs with `/reports` routes).
+- ✅ Prefer type-safe helpers (zod schemas, shared enums, Prisma-generated types) over inline strings.
+
+## Type Safety
+- Treat the Prisma client types + zod schemas in `src/server/trpc/schemas` as the source of truth for data shapes. Import and reuse them in the frontend via `@prisma/client`or generated tRPC inference helpers.
+- Derive API input/output types with `inferRouterInputs/Outputs` or `RouterInputs/RouterOutputs` to prevent drift.
+- Only introduce new types in the frontend when they describe UI-specific structures (e.g., component props, view models). Data types tied to the database or API responses must be shared from the backend.
+
+## Handy Commands
+- `pnpm dev` – run the app locally.
+- `pnpm lint` – ESLint via `next lint`.
+- `pnpm db:push:dev` / `pnpm db:migrate` – keep Prisma schema + database aligned.
+- `pnpm prisma studio` – inspect data; use the `:dev` or `:prod` variants when targeting specific DBs.

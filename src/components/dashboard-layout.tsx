@@ -19,7 +19,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Redirect to onboarding if not onboarded
   useEffect(() => {
     if (onboardingStatus && !onboardingStatus.onboarded) {
-      router.push('/onboarding')
+      router.replace('/onboarding')
     }
   }, [onboardingStatus, router])
 

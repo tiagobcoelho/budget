@@ -25,6 +25,8 @@ import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { CreateCategoryModal } from '@/components/categories/create-category-modal'
 import { createTransactionSchema } from '@/server/trpc/schemas/transaction.schema'
+import { UserSelector } from './user-selector'
+import { trpc } from '@/lib/trpc/client'
 
 // Extend the server-side schema with UI-specific validations
 // This keeps the schemas connected - changes to the server schema will flow to the UI
@@ -85,13 +87,26 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   onSubmit,
 }) => {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
+  const { data: household } = trpc.household.current.useQuery()
+  const soleMemberUserId =
+    household?.members?.length === 1 ? household.members[0]?.user.id : null
 
-  console.log('categories', categories)
+  const baseDefaultValues: TransactionFormValues = {
+    description: '',
+    amount: 0,
+    occurredAt: new Date().toISOString().split('T')[0],
+    type: 'EXPENSE',
+    fromAccountId: null,
+    toAccountId: null,
+    categoryId: null,
+    userId: soleMemberUserId ?? null,
+  }
 
   // Create internal form if not provided (controlled mode)
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
     defaultValues: {
+      ...baseDefaultValues,
       ...defaultValues,
     },
     mode: 'onChange',
@@ -110,7 +125,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
     const currentTransactionType = form.getValues('type')
     if (currentTransactionType !== 'TRANSFER') {
       // Set the new category
-      console.log('setting categoryId', newCategory.id)
       form.setValue('categoryId', newCategory.id)
 
       // If transaction type doesn't match category type, update transaction type
@@ -136,7 +150,11 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   const handleSubmit = (data: TransactionFormValues) => {
     console.log('handleSubmit from form', data)
     onSubmit?.(data)
-    form.reset()
+    form.reset({
+      ...baseDefaultValues,
+      type: transactionType,
+      userId: soleMemberUserId ?? null,
+    })
   }
 
   return (
@@ -528,6 +546,28 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
             </>
           )}
         </div>
+
+        {/* User Selector - Show only if household has multiple members */}
+        {household && household.members.length > 1 && (
+          <FormField
+            control={form.control}
+            name="userId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Assign to</FormLabel>
+                <FormControl>
+                  <UserSelector
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={isSubmitting}
+                    showShared={true}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         {showSubmitButton && (
           <div className="flex justify-end">

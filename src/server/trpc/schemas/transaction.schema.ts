@@ -39,6 +39,7 @@ export const transactionSchema = z.object({
   fromAccountId: z.string().uuid().optional().nullable(),
   toAccountId: z.string().uuid().optional().nullable(),
   createdByUserId: z.string().uuid(),
+  userId: z.string().uuid().optional().nullable(),
 })
 
 // List Transactions Input
@@ -51,7 +52,7 @@ export const listTransactionsSchema = z.object({
   type: transactionTypeSchema.optional(),
   q: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
-  cursor: z.string().uuid().nullish(),
+  page: z.number().min(1).default(1),
 })
 
 // Get Transaction By ID Input
@@ -72,6 +73,7 @@ export const createTransactionSchema = z.object({
   reviewed: z.boolean().optional(),
   possibleDuplicate: z.boolean().optional(),
   duplicateOfTransactionId: z.string().uuid().optional().nullable(),
+  userId: z.string().uuid().optional().nullable(),
 })
 
 // Update Transaction Input
@@ -88,6 +90,7 @@ export const updateTransactionSchema = z.object({
   reviewed: z.boolean().optional(),
   possibleDuplicate: z.boolean().optional(),
   duplicateOfTransactionId: z.string().uuid().optional().nullable(),
+  userId: z.string().uuid().optional().nullable(),
 })
 
 // Delete Transaction Input

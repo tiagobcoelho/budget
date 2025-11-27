@@ -55,9 +55,58 @@ export function calculatePeriodBounds(
   return { start, end }
 }
 
+/**
+ * Calculate the week number (1-4) within a month for a given date.
+ * Week 1: Days 1-7, Week 2: Days 8-14, Week 3: Days 15-21, Week 4: Days 22-31
+ */
+export function getWeekNumberInMonth(date: Date): number {
+  const dayOfMonth = date.getDate()
+  const weekNumber = Math.ceil(dayOfMonth / 7)
+  // Cap at 4 weeks
+  return Math.min(weekNumber, 4)
+}
+
+/**
+ * Convert a number to its ordinal form (1st, 2nd, 3rd, 4th, etc.)
+ */
+function toOrdinal(num: number): string {
+  const j = num % 10
+  const k = num % 100
+  if (j === 1 && k !== 11) {
+    return `${num}st`
+  }
+  if (j === 2 && k !== 12) {
+    return `${num}nd`
+  }
+  if (j === 3 && k !== 13) {
+    return `${num}rd`
+  }
+  return `${num}th`
+}
+
 export function formatPeriodLabel(startDate: Date): string {
   return startDate.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   })
+}
+
+/**
+ * Format a report label based on its period type.
+ * For weekly reports, returns "Xst week of Y" format (e.g., "1st week of January").
+ * For other periods, uses the standard period label.
+ */
+export function formatReportLabel(
+  startDate: Date,
+  period: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM'
+): string {
+  if (period === 'WEEKLY') {
+    const weekNumber = getWeekNumberInMonth(startDate)
+    const monthName = startDate.toLocaleDateString('en-US', {
+      month: 'long',
+    })
+    return `${toOrdinal(weekNumber)} week of ${monthName}`
+  }
+
+  return formatPeriodLabel(startDate)
 }

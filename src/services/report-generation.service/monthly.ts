@@ -4,10 +4,13 @@ import {
   AccountData,
   BudgetData,
   CategoryData,
-  GeneratedReport,
   TransactionData,
-  reportSchema,
+  monthlyReportSchema,
+  type ReportGenerationContext,
+  type AugmentedGeneratedReport,
+  type MonthlyGeneratedReport,
 } from './types'
+import { buildMonthlyAnalytics } from './utils/analytics'
 import { randomUUID } from 'crypto'
 
 const model = anthropic('claude-sonnet-4-5-20250929')
@@ -20,8 +23,10 @@ export async function generateReport(
   categories: CategoryData[],
   budgets: BudgetData[],
   accounts: AccountData[],
-  currency: string = 'USD'
-): Promise<GeneratedReport> {
+  currency: string = 'USD',
+  profileMemory: string = 'HOUSEHOLD PROFILE MEMORY: (none yet)',
+  context?: ReportGenerationContext
+): Promise<AugmentedGeneratedReport<MonthlyGeneratedReport>> {
   const totalIncome = transactions
     .filter((t) => t.type === 'INCOME')
     .reduce((sum, t) => sum + t.amount, 0)
@@ -86,10 +91,29 @@ export async function generateReport(
           ? '£'
           : currency
 
+  const analytics = buildMonthlyAnalytics({
+    transactions,
+    previousTransactions: context?.previousPeriodTransactions,
+    rollingTransactions: context?.rollingTransactions,
+    budgets,
+    categories,
+    startDate,
+    endDate,
+  })
+
+  const analyticsJson = JSON.stringify(analytics, null, 2)
+
   const prompt = [
+    profileMemory,
+    '',
     `You are a financial advisor analyzing a user's MONTHLY financial report for the period from ${
       startDate.toISOString().split('T')[0]
     } to ${endDate.toISOString().split('T')[0]} (${periodDays} days).`,
+    '',
+    'ANALYTICS DATA (JSON):',
+    analyticsJson,
+    '',
+    'Use only the numbers present above (totals, category metrics, budget stats, spending pattern arrays) plus the raw transaction summary below. Do not invent new figures.',
     '',
     `CURRENCY: All amounts should be reported in ${currency} (${currencySymbol}).`,
     '',
@@ -166,9 +190,9 @@ export async function generateReport(
       : 'No transfers in this period',
     '',
     'TASK (MONTHLY REPORT):',
-    '1. Write a concise summary as 3-5 bullet points (focus on month-wide patterns and goal progress)',
-    '2. Provide detailed insights (3-5 paragraphs) covering spending patterns, trends, unusual activity, transfer behavior, and notable observations across the month',
-    '3. Give actionable recommendations as 3-5 bullet points for improving financial health next month',
+    '1. Provide 2-4 behaviorPatterns objects (title + description) explaining the clearest behavioral trends, grounded in analytics (week-over-week, category history, spending pattern arrays, etc.).',
+    '2. Provide 2-4 risks objects (title + description) that reference the analytics data to explain why each risk matters and what metric triggered it.',
+    '3. Provide 2-4 opportunities objects (title + description) that highlight positive habits or easy wins from the analytics.',
     '4. Generate 3-5 budget suggestions:',
     '   - CREATE suggestions for categories with significant spending (>5% of total or notable absolute amounts) that do not have budgets',
     '   - UPDATE suggestions for budgets that are consistently exceeded (>110%) or too restrictive (<70%)',
@@ -185,7 +209,7 @@ export async function generateReport(
   try {
     const result = await generateObject({
       model,
-      schema: reportSchema,
+      schema: monthlyReportSchema,
       prompt,
     })
 
@@ -211,6 +235,7 @@ export async function generateReport(
     return {
       ...result.object,
       budgetSuggestions: fixedSuggestions,
+      analytics: { monthly: analytics },
     }
   } catch (error) {
     console.error('Error generating MONTHLY report:', error)

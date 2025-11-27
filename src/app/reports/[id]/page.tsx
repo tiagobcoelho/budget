@@ -3,7 +3,7 @@
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { ReportDetails } from '@/components/reports/report-details'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, Download } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { trpc } from '@/lib/trpc/client'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -14,7 +14,17 @@ export default function ReportDetailPage() {
 
   const { data: report, isLoading } = trpc.report.getById.useQuery(
     { id: reportId },
-    { enabled: !!reportId }
+    {
+      enabled: !!reportId,
+      refetchInterval: (query) => {
+        // Poll every 2 seconds if report is generating
+        const data = query.state.data
+        if (data?.status === 'GENERATING') {
+          return 2000
+        }
+        return false
+      },
+    }
   )
 
   if (isLoading) {
@@ -66,13 +76,6 @@ export default function ReportDetailPage() {
         year: 'numeric',
       })
 
-  const handleExport = () => {
-    // TODO: Implement export functionality
-    console.log('Export report:', report.id)
-  }
-
-  console.log('report', report)
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -91,10 +94,6 @@ export default function ReportDetailPage() {
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExport}>
-            <Download className="mr-2 size-4" />
-            Export Report
-          </Button>
         </div>
 
         <ReportDetails report={report} />

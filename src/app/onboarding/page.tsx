@@ -23,10 +23,10 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (!isLoadingStep && stepData) {
       // If user is already onboarded, redirect to dashboard
-      // if (stepData.onboarded) {
-      //   router.push('/dashboard')
-      //   return
-      // }
+      if (stepData.onboarded) {
+        router.replace('/dashboard')
+        return
+      }
 
       // Resume from saved step (skip welcome if already started)
       if (stepData.step > 1) {

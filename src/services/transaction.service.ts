@@ -13,7 +13,7 @@ export class TransactionService {
       type,
       q,
       limit = 20,
-      cursor,
+      page = 1,
     } = input
 
     // Build account filter: match if fromAccountId or toAccountId matches
@@ -87,16 +87,27 @@ export class TransactionService {
       where.AND = andConditions
     }
 
+    const skip = (page - 1) * limit
+
     const [items, total] = await Promise.all([
       db.transaction.findMany({
         where,
+        skip,
         take: limit,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
         include: {
           category: true,
           fromAccount: true,
           toAccount: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              imageUrl: true,
+            },
+          },
           duplicateOf: {
             select: {
               id: true,
@@ -110,9 +121,7 @@ export class TransactionService {
       db.transaction.count({ where }),
     ])
 
-    const nextCursor =
-      items.length === limit ? items[items.length - 1]!.id : null
-    return { items, nextCursor, total }
+    return { items, total }
   }
 
   static async getById(householdId: string, id: string) {
@@ -122,6 +131,15 @@ export class TransactionService {
         category: true,
         fromAccount: true,
         toAccount: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
         duplicateOf: {
           select: {
             id: true,
@@ -142,6 +160,15 @@ export class TransactionService {
         category: true,
         fromAccount: true,
         toAccount: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
         duplicateOf: {
           select: {
             id: true,
@@ -152,6 +179,20 @@ export class TransactionService {
         },
       },
     })
+  }
+
+  private static async getSingleMemberUserId(
+    householdId: string
+  ): Promise<string | null> {
+    const members = await db.householdMember.findMany({
+      where: { householdId },
+      select: { userId: true },
+    })
+
+    if (members.length === 1) {
+      return members[0].userId
+    }
+    return null
   }
 
   static async create(
@@ -169,6 +210,7 @@ export class TransactionService {
       reviewed?: boolean
       possibleDuplicate?: boolean
       duplicateOfTransactionId?: string | null
+      userId?: string | null
     }
   ) {
     // Validate TRANSFER transactions: if both accounts are provided, they must differ
@@ -184,10 +226,22 @@ export class TransactionService {
       }
     }
 
+    // Determine which user should own this transaction
+    let resolvedUserId =
+      typeof data.userId === 'undefined' ? createdByUserId : data.userId
+
+    if (resolvedUserId === null) {
+      const singleMemberUserId = await this.getSingleMemberUserId(householdId)
+      if (singleMemberUserId) {
+        resolvedUserId = singleMemberUserId
+      }
+    }
+
     return db.transaction.create({
       data: {
         householdId,
         createdByUserId,
+        userId: resolvedUserId ?? null,
         fromAccountId: data.fromAccountId ?? null,
         toAccountId: data.toAccountId ?? null,
         type: data.type,
@@ -205,6 +259,15 @@ export class TransactionService {
         category: true,
         fromAccount: true,
         toAccount: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            imageUrl: true,
+          },
+        },
         duplicateOf: {
           select: {
             id: true,
@@ -232,6 +295,7 @@ export class TransactionService {
       reviewed: boolean
       possibleDuplicate?: boolean
       duplicateOfTransactionId?: string | null
+      userId?: string | null
     }>
   ) {
     // Get existing transaction to validate updates
@@ -264,7 +328,15 @@ export class TransactionService {
             duplicateOfTransactionId: data.duplicateOfTransactionId ?? null,
           }
         : {}),
+      ...('userId' in data ? { userId: data.userId ?? null } : {}),
       updatedAt: new Date(),
+    }
+
+    if ('userId' in data && data.userId === null) {
+      const singleMemberUserId = await this.getSingleMemberUserId(householdId)
+      if (singleMemberUserId) {
+        updateData.userId = singleMemberUserId
+      }
     }
 
     // Handle type-specific updates
@@ -342,7 +414,9 @@ export class TransactionService {
       description?: string | null
       note?: string | null
       reviewed?: boolean
-    }>
+      userId?: string | null
+    }>,
+    defaultUserId?: string | null
   ) {
     const results = {
       successCount: 0,
@@ -354,7 +428,12 @@ export class TransactionService {
     for (let i = 0; i < transactions.length; i++) {
       const transaction = transactions[i]!
       try {
-        await this.create(householdId, createdByUserId, transaction)
+        // Use transaction-specific userId, or defaultUserId, or createdByUserId
+        const userId = transaction.userId ?? defaultUserId ?? createdByUserId
+        await this.create(householdId, createdByUserId, {
+          ...transaction,
+          userId,
+        })
         results.successCount++
       } catch (error) {
         results.failedCount++

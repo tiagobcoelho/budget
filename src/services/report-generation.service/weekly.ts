@@ -4,10 +4,13 @@ import {
   AccountData,
   BudgetData,
   CategoryData,
-  GeneratedReport,
   TransactionData,
-  reportSchema,
+  weeklyReportSchema,
+  type ReportGenerationContext,
+  type AugmentedGeneratedReport,
+  type WeeklyGeneratedReport,
 } from './types'
+import { buildWeeklyBudgetProjections } from './utils/analytics'
 
 const model = anthropic('claude-sonnet-4-5-20250929')
 
@@ -20,8 +23,10 @@ export async function generateReport(
   budgets: BudgetData[],
   accounts: AccountData[],
   currency: string = 'USD',
-  monthlyTransactions: TransactionData[] = []
-): Promise<GeneratedReport> {
+  profileMemory: string = 'HOUSEHOLD PROFILE MEMORY: (none yet)',
+  context?: ReportGenerationContext
+): Promise<AugmentedGeneratedReport<WeeklyGeneratedReport>> {
+  const monthlyTransactions = context?.monthlyTransactions ?? []
   const totalIncome = transactions
     .filter((t) => t.type === 'INCOME')
     .reduce((sum, t) => sum + t.amount, 0)
@@ -165,10 +170,22 @@ export async function generateReport(
   monthEnd.setDate(0)
   monthEnd.setHours(23, 59, 59, 999)
 
+  const weeklyProjectionAnalytics = buildWeeklyBudgetProjections({
+    weeklyTransactions: transactions,
+    monthlyTransactions,
+    rollingTransactions: context?.rollingTransactions,
+    budgets,
+    categories,
+    startDate,
+    endDate,
+  })
+
   const prompt = [
     `You are a financial advisor analyzing a user's WEEKLY financial report for the period from ${
       startDate.toISOString().split('T')[0]
     } to ${endDate.toISOString().split('T')[0]} (${periodDays} days).`,
+    '',
+    profileMemory,
     '',
     `IMPORTANT CONTEXT: This is a weekly report, but the PRIMARY GOAL is to help the user meet their MONTHLY budget targets. While analyzing this week's spending, you must keep in mind the overall monthly budget progress and provide guidance to stay on track for the month.`,
     '',
@@ -268,22 +285,9 @@ export async function generateReport(
       : 'No transfers in this period',
     '',
     'TASK (WEEKLY REPORT):',
-    '1. Write a concise summary as 3-5 bullet points focusing on:',
-    '   - Key spending patterns this week',
-    '   - Progress toward monthly budget goals',
-    '   - Any concerns or positive trends',
-    '',
-    '2. Provide detailed insights (3-5 paragraphs) covering:',
-    "   - How this week's spending affects monthly budget progress",
-    '   - Which categories are on track, ahead, or behind for the month',
-    '   - Notable spending patterns or anomalies this week',
-    '   - Recommendations to stay on track for remaining month goals',
-    '',
-    '3. Give actionable recommendations as 3-5 bullet points:',
-    '   - Specific guidance for the coming week to meet monthly budget goals',
-    '   - Categories that need attention based on monthly progress',
-    '   - Actions to take if spending is ahead of pace',
-    '   - Positive reinforcement if on track',
+    '1. Provide 3-5 potentialIssues strings describing the most important risks, overspends, or pacing concerns from this week. Reference concrete numbers when possible.',
+    '2. Provide 3-5 recommendedActions strings that give specific next steps for the coming week, tied to the issues noted above.',
+    'IMPORTANT: Leave monthAtGlanceNarrative, categoryDeepDiveNarrative, incomeAndSavingsNarrative, budgetAdherenceNarrative, behaviorPatternNarrative, riskNarrative, and opportunityNarrative empty. Those sections are monthly-only.',
     '',
     'IMPORTANT: DO NOT provide budget suggestions (CREATE or UPDATE) in weekly reports.',
     'The focus is on helping the user meet their existing monthly budget goals,',
@@ -299,15 +303,15 @@ export async function generateReport(
   try {
     const result = await generateObject({
       model,
-      schema: reportSchema,
+      schema: weeklyReportSchema,
       prompt,
     })
 
-    // Weekly reports should not include budget suggestions
-    // Return empty array for budget suggestions
     return {
       ...result.object,
-      budgetSuggestions: [],
+      analytics: weeklyProjectionAnalytics
+        ? { weeklyProjection: weeklyProjectionAnalytics }
+        : undefined,
     }
   } catch (error) {
     console.error('Error generating WEEKLY report:', error)

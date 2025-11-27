@@ -7,6 +7,7 @@ import {
   listHouseholdMembersSchema,
   inviteMemberSchema,
   removeMemberSchema,
+  createCoupleHouseholdSchema,
 } from '../schemas/household.schema'
 
 export const householdRouter = router({
@@ -218,5 +219,32 @@ export const householdRouter = router({
 
       await HouseholdService.removeMember(input.householdId, input.userId)
       return { success: true }
+    }),
+
+  /**
+   * Create couple household (during onboarding)
+   */
+  createCouple: protectedProcedure
+    .input(createCoupleHouseholdSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' })
+      }
+
+      // Check if user already has a household
+      const existing = await HouseholdService.getByUserId(ctx.user.id)
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'User already has a household',
+        })
+      }
+
+      return HouseholdService.createCoupleHousehold(
+        ctx.user.id,
+        input.partnerEmail,
+        input.partnerFirstName,
+        input.partnerLastName
+      )
     }),
 })

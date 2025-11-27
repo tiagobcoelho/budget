@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { ReportPeriod, ReportStatus } from '@prisma/client'
-import { budgetSuggestionSchema } from '@/services/report-generation.service/types'
+import {
+  budgetSuggestionSchema,
+  narrativeItemSchema,
+  reportAnalyticsSchema,
+} from '@/services/report-generation.service/types'
 import { transactionSchema } from './transaction.schema'
 // Report Period Enum
 export const reportPeriodSchema = z.nativeEnum(ReportPeriod)
@@ -59,10 +63,12 @@ export const reportDataSchema = z.object({
     })
   ),
   llm: z.object({
-    summary: z.array(z.string()).nullable().optional(),
-    insights: z.array(z.string()).nullable().optional(),
-    suggestionsText: z.array(z.string()).nullable().optional(),
     budgetSuggestions: z.array(budgetSuggestionSchema),
+    behaviorPatterns: z.array(narrativeItemSchema).nullable().optional(),
+    risks: z.array(narrativeItemSchema).nullable().optional(),
+    opportunities: z.array(narrativeItemSchema).nullable().optional(),
+    potentialIssues: z.array(z.string()).nullable().optional(),
+    recommendedActions: z.array(z.string()).nullable().optional(),
   }),
   meta: z
     .object({
@@ -70,6 +76,7 @@ export const reportDataSchema = z.object({
       label: z.string().optional(),
     })
     .optional(),
+  analytics: reportAnalyticsSchema.optional(),
 })
 
 // Router inputs for setting/merging report data

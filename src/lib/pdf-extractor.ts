@@ -306,21 +306,43 @@ function applyDuplicateLinks(
       continue
     }
 
+    const originalSummary = summaryById.get(link.originalId)
+    const duplicateSummary = summaryById.get(link.duplicateId)
+
+    if (!originalSummary || !duplicateSummary) {
+      continue
+    }
+
+    if (originalSummary.occurredAt !== duplicateSummary.occurredAt) {
+      continue
+    }
+
     transaction.possibleDuplicate = true
     transaction.duplicateOfId = link.originalId
     transaction.duplicateReason = link.reason
 
-    const summary = summaryById.get(link.originalId)
-    if (summary) {
-      transaction.duplicateOfSummary = {
-        description: summary.description,
-        occurredAt: summary.occurredAt,
-        amount: summary.amount,
-      }
-      if (!transaction.duplicateReason) {
-        transaction.duplicateReason = `Matches ${summary.description} on ${summary.occurredAt} for €${summary.amount.toFixed(2)}`
-      }
+    transaction.duplicateOfSummary = {
+      description: originalSummary.description,
+      occurredAt: originalSummary.occurredAt,
+      amount: originalSummary.amount,
     }
+
+    if (!transaction.duplicateReason) {
+      transaction.duplicateReason = `Matches ${originalSummary.description} on ${originalSummary.occurredAt} for €${originalSummary.amount.toFixed(2)}`
+    }
+  }
+}
+
+function enforceDuplicatePairIntegrity(transactions: ExtractedTransaction[]) {
+  for (const transaction of transactions) {
+    if (transaction.duplicateOfId) {
+      transaction.possibleDuplicate = true
+      continue
+    }
+
+    transaction.possibleDuplicate = false
+    transaction.duplicateReason = undefined
+    transaction.duplicateOfSummary = undefined
   }
 }
 
@@ -627,6 +649,7 @@ async function markTransactionsWithPossibleDuplicates(
   applyDuplicateLinks(transactions, heuristicLinks, summaryById)
 
   if (totalComparable < 2) {
+    enforceDuplicatePairIntegrity(transactions)
     return transactions
   }
 
@@ -675,9 +698,11 @@ async function markTransactionsWithPossibleDuplicates(
 
     applyDuplicateLinks(transactions, llmLinks, summaryById)
 
+    enforceDuplicatePairIntegrity(transactions)
     return transactions
   } catch (error) {
     console.error('Error detecting possible duplicate transactions:', error)
+    enforceDuplicatePairIntegrity(transactions)
     return transactions
   }
 }

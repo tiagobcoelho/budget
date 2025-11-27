@@ -81,15 +81,19 @@ model User {
   preference    UserPreference?
   householdMembers HouseholdMember[]
   transactionsCreated Transaction[] @relation("CreatedBy")
+  transactionsOwned Transaction[] @relation("TransactionOwner")
+  accountsOwned Account[] @relation("AccountOwner")
+  invitesSent Invite[] @relation("InvitesSent")
 }
 
 model Household {
-  id              String   @id @default(uuid()) @db.Uuid
-  name            String   @db.VarChar(255)
-  seatLimit       Int      @default(1)
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @db.VarChar(255)
+  seatLimit        Int      @default(1)
   stripeCustomerId String?  @db.VarChar(255)
-  createdAt       DateTime @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime @default(now()) @db.Timestamp(6)
+  createdAt        DateTime @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  financialProfile Json     @default("{}") @map("financial_profile")
 
   members         HouseholdMember[]
   subscriptions   Subscription[]
@@ -99,6 +103,7 @@ model Household {
   budgetDefinitions BudgetDefinition[]
   reports         Report[]
   transactions    Transaction[]
+  invites         Invite[]
 
   @@index([seatLimit])
 }
@@ -186,6 +191,7 @@ model Category {
 model Account {
   id             String   @id @default(uuid()) @db.Uuid
   householdId    String   @db.Uuid
+  userId         String?  @db.Uuid
   name           String   @db.VarChar(255)
   type           AccountType
   currencyCode   String   @default("EUR") @db.VarChar(3)
@@ -194,17 +200,20 @@ model Account {
   updatedAt      DateTime @default(now()) @db.Timestamp(6)
 
   household         Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user              User?             @relation("AccountOwner", fields: [userId], references: [id], onDelete: SetNull)
   transactionsFrom  Transaction[]     @relation("TxnFrom")
   transactionsTo    Transaction[]     @relation("TxnTo")
 
   @@index([householdId])
   @@index([type])
+  @@index([userId])
 }
 
 model Transaction {
   id              String          @id @default(uuid()) @db.Uuid
   householdId     String          @db.Uuid
   createdByUserId String          @db.Uuid
+  userId          String?         @db.Uuid
   fromAccountId   String?         @db.Uuid
   toAccountId     String?         @db.Uuid
   categoryId      String?         @db.Uuid
@@ -221,6 +230,7 @@ model Transaction {
 
   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   createdBy   User      @relation("CreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  user        User?     @relation("TransactionOwner", fields: [userId], references: [id], onDelete: SetNull)
   fromAccount Account?  @relation("TxnFrom", fields: [fromAccountId], references: [id], onDelete: SetNull)
   toAccount   Account?  @relation("TxnTo", fields: [toAccountId], references: [id], onDelete: SetNull)
   category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -233,6 +243,7 @@ model Transaction {
   @@index([categoryId])
   @@index([type])
   @@index([createdByUserId])
+  @@index([userId])
   @@index([duplicateOfTransactionId])
 }
 
@@ -322,5 +333,25 @@ model Report {
   @@index([status])
   @@index([period])
   @@index([isInitial])
+}
+
+model Invite {
+  id            String   @id @default(uuid()) @db.Uuid
+  householdId   String   @db.Uuid
+  email         String   @db.VarChar(255)
+  invitedByUserId String @db.Uuid
+  status        String   @default("PENDING") @db.VarChar(50) // PENDING, ACCEPTED, EXPIRED
+  token         String   @unique @db.VarChar(255)
+  expiresAt     DateTime @db.Timestamp(6)
+  createdAt     DateTime @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime @default(now()) @db.Timestamp(6)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitesSent", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, email, status])
+  @@index([email, status])
+  @@index([token])
+  @@index([householdId])
 }
 

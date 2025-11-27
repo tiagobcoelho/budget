@@ -1,8 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@clerk/nextjs'
 import { motion } from 'framer-motion'
 
 import Link from 'next/link'
+import LightRays from '@/components/ui/light-rays'
+import SpotlightCard from '@/components/ui/spotlight-card'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -41,10 +45,18 @@ const staggerContainer = {
 }
 
 export default function LandingPage() {
+  const router = useRouter()
+  const { isSignedIn, isLoaded } = useAuth()
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>(
     'monthly'
   )
   const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.replace('/dashboard')
+    }
+  }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -307,14 +319,23 @@ export default function LandingPage() {
       {/* Add spacer for fixed navbar */}
       <div className="h-20" />
 
+      <div className="absolute inset-0 z-0">
+        <LightRays
+          raysOrigin="top-center"
+          raysColor="#568de9"
+          raysSpeed={1}
+          lightSpread={1}
+          rayLength={2}
+          fadeDistance={1.2}
+          saturation={0.8}
+          followMouse={true}
+          mouseInfluence={0.15}
+          noiseAmount={0.05}
+          // className="absolute inset-0"
+        />
+      </div>
       {/* Hero Section */}
       <section className="relative overflow-hidden py-32  pb-0!">
-        <div className="absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-0 -translate-x-1/2 h-[1000px] w-[1000px] rounded-full bg-primary/30 blur-[120px]" />
-          <div className="absolute right-0 top-1/4 h-[600px] w-[600px] rounded-full bg-accent/25 blur-[80px]" />
-          <div className="absolute left-0 bottom-0 h-[500px] w-[500px] rounded-full bg-primary/20 blur-[100px]" />
-        </div>
-
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial="hidden"
@@ -493,7 +514,7 @@ export default function LandingPage() {
           >
             {features.map((feature, index) => (
               <motion.div key={index} variants={fadeInUp}>
-                <Card className="p-8 bg-muted/30 border-border/50 hover:bg-muted/40 transition-colors h-full">
+                <SpotlightCard className="h-full">
                   <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                     <feature.icon className="h-6 w-6 text-primary" />
                   </div>
@@ -503,7 +524,7 @@ export default function LandingPage() {
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {feature.description}
                   </p>
-                </Card>
+                </SpotlightCard>
               </motion.div>
             ))}
           </motion.div>

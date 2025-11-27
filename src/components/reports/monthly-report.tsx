@@ -1,16 +1,17 @@
 'use client'
 
-import { Card, CardContent } from '@/components/ui/card'
-import { TrendingUp, TrendingDown } from 'lucide-react'
-import { formatCurrency } from '@/lib/format'
 import { BudgetCard } from '@/components/budget-card'
 import { BudgetSuggestionCard } from './budget-suggestion-card'
-import { ReportAnalysisSection } from '@/components/reports/report-analysis-section'
 import {
   BudgetSuggestion,
   ReportData,
 } from '@/server/trpc/schemas/report.schema'
 import { trpc } from '@/lib/trpc/client'
+import { MonthAtGlanceSection } from './monthly/month-at-glance-section'
+import { CategoryDeepDiveSection } from './monthly/category-deep-dive-section'
+import { BudgetAdherenceSection } from './monthly/budget-adherence-section'
+import { BehaviorPatternsSection } from './monthly/behavior-patterns-section'
+import { RisksOpportunitiesSection } from './monthly/risks-opportunities-section'
 
 interface MonthlyReportProps {
   reportId: string
@@ -31,12 +32,12 @@ export function MonthlyReport({
   onApproveSuggestion,
   onRejectSuggestion,
 }: MonthlyReportProps) {
-  const totals = reportData?.totals
   const categories = reportData?.categories ?? []
-  const summary = reportData?.llm?.summary ?? []
-  const insights = reportData?.llm?.insights ?? []
-  const suggestionsText = reportData?.llm?.suggestionsText ?? []
   const budgetSuggestions = reportData?.llm?.budgetSuggestions ?? []
+  const behaviorPatterns = reportData?.llm?.behaviorPatterns ?? []
+  const risks = reportData?.llm?.risks ?? []
+  const opportunities = reportData?.llm?.opportunities ?? []
+  const analytics = reportData?.analytics?.monthly
   const { data: preferences } = trpc.preference.get.useQuery()
   const currencyCode =
     (preferences?.defaultCurrencyCode as string | undefined) ?? 'USD'
@@ -73,64 +74,13 @@ export function MonthlyReport({
   const percentage =
     totalAllocated > 0 ? (totalSpent / totalAllocated) * 100 : 0
 
-  const savingsRatePercent =
-    totals?.savingsRate != null ? totals.savingsRate * 100 : undefined
-
-  const income = totals?.income
-  const expenses = totals?.expenses
-  const savingsRate =
-    savingsRatePercent !== undefined ? savingsRatePercent : undefined
+  if (!analytics) {
+    return null
+  }
 
   return (
-    <div className="space-y-6 pb-20 md:pb-6">
-      {!!totals && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          {income !== undefined && (
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="size-4 text-success" />
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Total Income
-                  </p>
-                </div>
-                <p className="mt-2 text-3xl font-bold text-success">
-                  {formatCurrency(income, currencyCode)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">This month</p>
-              </CardContent>
-            </Card>
-          )}
-          {expenses !== undefined && (
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <TrendingDown className="size-4 text-destructive" />
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Total Expenses
-                  </p>
-                </div>
-                <p className="mt-2 text-3xl font-bold">
-                  {formatCurrency(expenses, currencyCode)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">This month</p>
-              </CardContent>
-            </Card>
-          )}
-          {savingsRate !== undefined && (
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Savings Rate
-                </p>
-                <p className="mt-2 text-3xl font-bold text-primary">
-                  {savingsRate.toFixed(1)}%
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+    <div className="space-y-10 pb-20 md:pb-6">
+      <MonthAtGlanceSection analytics={analytics} currencyCode={currencyCode} />
 
       {!!budgetAllocations.length && (
         <BudgetCard
@@ -141,19 +91,28 @@ export function MonthlyReport({
           remaining={remaining}
           allocations={budgetAllocations}
           categoriesWithoutBudgets={categoriesWithoutBudgets}
-          showTransactionAlert={false}
         />
       )}
 
-      <ReportAnalysisSection
-        summary={summary}
-        insights={insights}
-        suggestions={suggestionsText}
+      <CategoryDeepDiveSection
+        analytics={analytics}
+        currencyCode={currencyCode}
       />
+
+      <BudgetAdherenceSection
+        analytics={analytics}
+        currencyCode={currencyCode}
+      />
+
+      <BehaviorPatternsSection behaviorPatterns={behaviorPatterns} />
+
+      <RisksOpportunitiesSection risks={risks} opportunities={opportunities} />
 
       {!!budgetSuggestions.length && (
         <div>
-          <h2 className="mb-4 text-lg font-semibold">Budget Recommendations</h2>
+          <h2 className="mb-4 text-lg font-semibold">
+            Refined Budget Suggestions
+          </h2>
           <div className="grid gap-4 md:grid-cols-2">
             {budgetSuggestions.map((suggestion: BudgetSuggestion) => (
               <BudgetSuggestionCard

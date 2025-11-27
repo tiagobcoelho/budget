@@ -4,9 +4,9 @@ import { randomUUID } from 'crypto'
 import {
   AccountData,
   CategoryData,
-  GeneratedReport,
+  InitialGeneratedReport,
   TransactionData,
-  reportSchema,
+  initialReportSchema,
 } from './types'
 
 const model = anthropic('claude-sonnet-4-5-20250929')
@@ -18,7 +18,7 @@ export async function generateInitialReport(
   categories: CategoryData[],
   accounts: AccountData[],
   currency: string = 'USD'
-): Promise<GeneratedReport> {
+): Promise<InitialGeneratedReport> {
   const totalIncome = transactions
     .filter((t) => t.type === 'INCOME')
     .reduce((sum, t) => sum + t.amount, 0)
@@ -180,9 +180,9 @@ ${
 }
 
 TASK (INITIAL REPORT):
-1. Write a concise summary as 3-5 bullet points (focus on baseline overview and quick wins to set up core budgets)
-2. Provide detailed insights (3-5 paragraphs) analyzing spending patterns, trends, unusual activity, and transfers
-3. Give actionable recommendations as 3-5 bullet points for improving financial health
+1. Provide 2-4 behaviorPatterns objects highlighting baseline habits (each needs a title and description with concrete data references).
+2. Provide 2-4 risks objects that capture the most urgent issues to address during onboarding (each with a title and description referencing supporting data).
+3. Provide 2-4 opportunities objects that show positive trends or simple wins to reinforce (each with a title and description).
 4. Generate category budgets — this is the primary goal of the Initial Report. Your output must define a clear, actionable monthly budget plan:
    - Create budgets for categories with significant spending (start with core living: rent/mortgage, groceries, utilities, transport; then top discretionary by spend). Avoid long-tail budgets.
    - For each category budget, provide a short rationale and expected impact.
@@ -200,7 +200,7 @@ CRITICAL RULES FOR BUDGET SUGGESTIONS:
   try {
     const result = await generateObject({
       model,
-      schema: reportSchema,
+      schema: initialReportSchema,
       prompt,
     })
 

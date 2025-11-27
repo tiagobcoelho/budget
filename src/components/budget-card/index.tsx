@@ -3,13 +3,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import {
-  TrendingUp,
-  TrendingDown,
-  ChevronDown,
-  ChevronUp,
-  AlertCircle,
-} from 'lucide-react'
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -17,7 +11,6 @@ import { formatCurrency, formatDateShort } from '@/lib/format'
 import { IndividualBudgetCard } from '@/components/budget-card/individual-budget-card'
 import { NoBudgetCategoryCard } from '@/components/budget-card/no-budget-category-card'
 import { ExpenseCategoryCard } from '@/components/budget-card/budget-card-expense-category-card'
-import Link from 'next/link'
 import { Transaction } from '@/server/trpc/schemas/transaction.schema'
 import { trpc } from '@/lib/trpc/client'
 
@@ -66,7 +59,6 @@ interface BudgetCardProps {
   title?: string
   lastTransactionDate?: string | Date
   lastTransactionDaysAgo?: number
-  showTransactionAlert?: boolean
 }
 
 export function BudgetCard({
@@ -81,7 +73,6 @@ export function BudgetCard({
   title,
   lastTransactionDate,
   lastTransactionDaysAgo,
-  showTransactionAlert = false,
 }: BudgetCardProps) {
   const [areAllExpanded, setAreAllExpanded] = useState(false)
   const { data: preferences } = trpc.preference.get.useQuery()
@@ -105,11 +96,6 @@ export function BudgetCard({
 
   const isOverBudget = percentage >= 100
   const isWarning = percentage >= 80 && percentage < 100
-  const needsTransactionUpdate =
-    showTransactionAlert &&
-    lastTransactionDaysAgo !== undefined &&
-    lastTransactionDaysAgo >= 2
-
   const toggleAll = () => {
     setAreAllExpanded(!areAllExpanded)
   }
@@ -151,32 +137,6 @@ export function BudgetCard({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {needsTransactionUpdate && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="size-5 shrink-0 text-amber-500" />
-                <div className="flex-1">
-                  <p className="mb-1 text-sm font-medium text-amber-600 dark:text-amber-500">
-                    Time to update your budget
-                  </p>
-                  <p className="mb-3 text-sm text-muted-foreground">
-                    You haven&apos;t added transactions in{' '}
-                    {lastTransactionDaysAgo} days. Add them now to keep your
-                    budget accurate.
-                  </p>
-                  <Button
-                    size="sm"
-                    asChild
-                    variant="outline"
-                    className="border-amber-500/30 hover:bg-amber-500/10"
-                  >
-                    <Link href="/transactions/add">Add Transactions</Link>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="flex items-end justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Total Spending</p>

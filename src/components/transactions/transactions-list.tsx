@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,69 +18,123 @@ import { CheckCircle } from 'lucide-react'
 import { TransactionCard } from './transactions-card'
 import { TransactionGroupCard } from './transaction-group-card'
 import { Transaction } from '@prisma/client'
+import type { ListTransactionsInput } from '@/server/trpc/schemas/transaction.schema'
+import { Skeleton } from '@/components/ui/skeleton'
+
+type TransactionWithRelations = Transaction & {
+  duplicateOf?: Pick<
+    Transaction,
+    'id' | 'description' | 'amount' | 'occurredAt'
+  > | null
+  user?: {
+    id: string
+    firstName: string | null
+    lastName: string | null
+    email: string
+    imageUrl: string | null
+  } | null
+}
+
+type TransactionListFilters = Omit<ListTransactionsInput, 'limit' | 'page'>
 
 interface TransactionListProps {
-  transactionIds: string[]
   itemsPerPage?: number
-  allowDelete?: boolean
+  filters?: TransactionListFilters
+}
+
+const TransactionListSkeleton: React.FC<{ count: number }> = ({ count }) => {
+  const skeletonCount = Math.max(count, 1)
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: skeletonCount }).map((_, index) => (
+        <Card key={`transaction-skeleton-${index}`} className="overflow-hidden">
+          <CardContent className="space-y-4 py-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <div className="flex flex-wrap gap-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+              <div className="space-y-2 text-right">
+                <Skeleton className="ml-auto h-5 w-24" />
+                <Skeleton className="ml-auto h-3 w-20" />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-6 w-16" />
+              <Skeleton className="h-8 w-8 rounded-full" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({
-  transactionIds,
   itemsPerPage = 10,
-  allowDelete = false,
+  filters,
 }) => {
   const utils = trpc.useUtils()
   const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = Math.min(itemsPerPage, 100)
 
-  // Fetch transactions by IDs
-  const transactionsQuery = trpc.transaction.list.useQuery(
-    {
-      limit: 100,
-    },
-    {
-      enabled: transactionIds.length > 0,
-    }
+  const queryInput = useMemo<TransactionListFilters>(
+    () => ({
+      ...(filters ?? {}),
+    }),
+    [filters]
   )
 
-  // Filter to only show transactions that were just created
-  const allTransactions = useMemo(
-    () =>
-      transactionsQuery.data?.items.filter((t) =>
-        transactionIds.includes(t.id)
-      ) || [],
-    [transactionsQuery.data?.items, transactionIds]
-  )
+  const filtersKey = useMemo(() => JSON.stringify(queryInput), [queryInput])
+
+  const { data, isLoading } = trpc.transaction.list.useQuery({
+    ...queryInput,
+    limit: pageSize,
+    page: currentPage,
+  })
+
+  const pageTransactions = useMemo(() => data?.items ?? [], [data?.items])
+  const totalTransactions = data?.total ?? 0
+  const totalPages =
+    totalTransactions > 0 ? Math.ceil(totalTransactions / pageSize) : 0
+
+  const isInitialLoading = isLoading
+  const isCurrentPageLoading = isLoading
 
   const transactionLookup = useMemo(() => {
     return new Map(
-      allTransactions.map((transaction) => [transaction.id, transaction])
+      pageTransactions.map((transaction) => [transaction.id, transaction])
     )
-  }, [allTransactions])
+  }, [pageTransactions])
 
   // Group transactions: parents with their duplicates, plus standalone transactions
   type TransactionGroup =
     | {
         type: 'group'
-        parent: Transaction
-        duplicates: Transaction[]
+        parent: TransactionWithRelations
+        duplicates: TransactionWithRelations[]
       }
     | {
         type: 'standalone'
-        transaction: Transaction
+        transaction: TransactionWithRelations
       }
 
   const transactionGroups = useMemo(() => {
-    if (allTransactions.length === 0) {
+    if (pageTransactions.length === 0) {
       return []
     }
 
-    const childMap = new Map<string, Transaction[]>()
+    const childMap = new Map<string, TransactionWithRelations[]>()
     const visited = new Set<string>()
     const groups: TransactionGroup[] = []
 
     // Build map of duplicates grouped by parent (only for parents in current results)
-    for (const transaction of allTransactions) {
+    for (const transaction of pageTransactions) {
       const parentId = transaction.duplicateOfTransactionId
       if (parentId && transactionLookup.has(parentId)) {
         const duplicatesForParent = childMap.get(parentId) ?? []
@@ -90,7 +144,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     }
 
     // Process all transactions to create groups
-    for (const transaction of allTransactions) {
+    for (const transaction of pageTransactions) {
       if (visited.has(transaction.id)) {
         continue
       }
@@ -127,7 +181,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     }
 
     // Add orphaned transactions (duplicates whose parent is not in results)
-    for (const transaction of allTransactions) {
+    for (const transaction of pageTransactions) {
       if (!visited.has(transaction.id)) {
         groups.push({
           type: 'standalone',
@@ -138,13 +192,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     }
 
     return groups
-  }, [allTransactions, transactionLookup])
+  }, [pageTransactions, transactionLookup])
 
-  // Calculate pagination based on groups (each group counts as 1 item)
-  const totalPages = Math.ceil(transactionGroups.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const displayedGroups = transactionGroups.slice(startIndex, endIndex)
+  const displayedGroups = transactionGroups
 
   // Find unreviewed transactions on current page
   const unreviewedTransactions = useMemo(() => {
@@ -182,21 +232,37 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     }
   }
 
-  // Reset to page 1 when transactionIds change
   useEffect(() => {
     setCurrentPage(1)
-  }, [transactionIds.length])
+  }, [filtersKey])
 
   // Ensure current page doesn't exceed total pages
+  // Only validate when we're not loading to prevent resetting during page navigation
   useEffect(() => {
+    // Skip validation during loading - wait for the query to complete
+    if (isLoading) {
+      return
+    }
+
+    // If we have data and current page exceeds total pages, adjust it
     if (totalPages > 0 && currentPage > totalPages) {
       setCurrentPage(totalPages)
+    } else if (totalPages === 0 && currentPage !== 1 && data) {
+      // Only reset to page 1 if we have data confirming there are no pages
+      // (not just because data is still loading)
+      setCurrentPage(1)
     }
-  }, [totalPages, currentPage])
+  }, [totalPages, currentPage, isLoading, data])
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page)
-  }
+  const handlePageChange = useCallback(
+    (page: number) => {
+      if (page < 1 || page === currentPage) {
+        return
+      }
+      setCurrentPage(page)
+    },
+    [currentPage]
+  )
 
   const paginationItems = useMemo(() => {
     const items = []
@@ -208,7 +274,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         items.push(
           <PaginationItem key={i}>
             <PaginationLink
-              href="#"
               onClick={(e) => {
                 e.preventDefault()
                 handlePageChange(i)
@@ -225,7 +290,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       items.push(
         <PaginationItem key={1}>
           <PaginationLink
-            href="#"
             onClick={(e) => {
               e.preventDefault()
               handlePageChange(1)
@@ -254,7 +318,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         items.push(
           <PaginationItem key={i}>
             <PaginationLink
-              href="#"
               onClick={(e) => {
                 e.preventDefault()
                 handlePageChange(i)
@@ -280,7 +343,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       items.push(
         <PaginationItem key={totalPages}>
           <PaginationLink
-            href="#"
             onClick={(e) => {
               e.preventDefault()
               handlePageChange(totalPages)
@@ -294,9 +356,17 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     }
 
     return items
-  }, [currentPage, totalPages])
+  }, [currentPage, totalPages, handlePageChange])
 
-  if (allTransactions.length === 0) {
+  if (isInitialLoading) {
+    return (
+      <div className="space-y-4">
+        <TransactionListSkeleton count={pageSize} />
+      </div>
+    )
+  }
+
+  if (totalTransactions === 0) {
     return (
       <Card>
         <CardContent className="pt-6">
@@ -311,26 +381,28 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        {displayedGroups.map((group) => {
-          if (group.type === 'group') {
-            return (
-              <TransactionGroupCard
-                key={group.parent.id}
-                parentTransaction={group.parent}
-                duplicateTransactions={group.duplicates}
-                allowDelete={allowDelete}
-              />
-            )
-          } else {
-            return (
-              <TransactionCard
-                key={group.transaction.id}
-                transaction={group.transaction}
-                allowDelete={allowDelete}
-              />
-            )
-          }
-        })}
+        {isCurrentPageLoading ? (
+          <TransactionListSkeleton count={pageSize} />
+        ) : (
+          displayedGroups.map((group) => {
+            if (group.type === 'group') {
+              return (
+                <TransactionGroupCard
+                  key={group.parent.id}
+                  parentTransaction={group.parent}
+                  duplicateTransactions={group.duplicates}
+                />
+              )
+            } else {
+              return (
+                <TransactionCard
+                  key={group.transaction.id}
+                  transaction={group.transaction}
+                />
+              )
+            }
+          })
+        )}
       </div>
 
       {unreviewedTransactions.length > 0 && (
@@ -354,7 +426,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
-                href="#"
                 onClick={(e) => {
                   e.preventDefault()
                   if (currentPage > 1) {
@@ -371,7 +442,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             {paginationItems}
             <PaginationItem>
               <PaginationNext
-                href="#"
                 onClick={(e) => {
                   e.preventDefault()
                   if (currentPage < totalPages) {

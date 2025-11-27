@@ -1,15 +1,15 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { TrendingDown, ChevronUp, ChevronDown } from 'lucide-react'
+import { TrendingDown } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { getCategoryColor } from '@/lib/category-colors'
-import { cn } from '@/lib/utils'
-import { formatCurrency, formatDateShort } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 import { BudgetSuggestionCard } from './budget-suggestion-card'
-import { ReportAnalysisSection } from '@/components/reports/report-analysis-section'
+import { WeeklyGuidanceSection } from '@/components/reports/weekly-guidance-section'
+import { WeeklyBudgetProjectionSection } from '@/components/reports/weekly/budget-projection-section'
+import type { WeeklyExpenseDetail } from '@/components/reports/weekly/types'
 import {
   BudgetSuggestion,
   ReportData,
@@ -37,14 +37,6 @@ interface PieDataItem {
   color: string
 }
 
-interface WeeklyExpenseDetail {
-  categoryId: string
-  categoryName: string
-  amount: number
-  color?: string | null
-  transactions: Transaction[]
-}
-
 export function WeeklyReport({
   reportId,
   reportData,
@@ -53,9 +45,6 @@ export function WeeklyReport({
   onApproveSuggestion,
   onRejectSuggestion,
 }: WeeklyReportProps) {
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set()
-  )
   const { data: preferences } = trpc.preference.get.useQuery()
   const currencyCode =
     (preferences?.defaultCurrencyCode as string | undefined) ?? 'USD'
@@ -69,10 +58,10 @@ export function WeeklyReport({
   }, [startDate, endDate])
 
   const totals = reportData?.totals
-  const summary = reportData?.llm?.summary ?? []
-  const insights = reportData?.llm?.insights ?? []
-  const recommendations = reportData?.llm?.suggestionsText ?? []
   const budgetSuggestions = reportData?.llm?.budgetSuggestions ?? []
+  const potentialIssues = reportData?.llm?.potentialIssues ?? []
+  const recommendedActions = reportData?.llm?.recommendedActions ?? []
+  const weeklyProjection = reportData?.analytics?.weeklyProjection ?? null
 
   const weeklyExpenseDetails = useMemo<WeeklyExpenseDetail[]>(() => {
     const categories = reportData?.categories ?? []
@@ -116,25 +105,6 @@ export function WeeklyReport({
       percentage: pieDenominator ? (cat.amount / pieDenominator) * 100 : 0,
       color: getCategoryColor(cat.categoryName, cat.color),
     })) || []
-
-  const toggleCategory = (categoryId: string) => {
-    const newExpanded = new Set(expandedCategories)
-    if (newExpanded.has(categoryId)) {
-      newExpanded.delete(categoryId)
-    } else {
-      newExpanded.add(categoryId)
-    }
-    setExpandedCategories(newExpanded)
-  }
-
-  const toggleAllCategories = (categoryCount: number) => {
-    if (expandedCategories.size === categoryCount) {
-      setExpandedCategories(new Set())
-    } else {
-      const categoryIds = weeklyExpenseDetails.map((c) => c.categoryId)
-      setExpandedCategories(new Set(categoryIds))
-    }
-  }
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
@@ -180,7 +150,9 @@ export function WeeklyReport({
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => formatCurrency(value, currencyCode)}
+                  formatter={(value: number) =>
+                    formatCurrency(value, currencyCode)
+                  }
                   contentStyle={{
                     borderRadius: '8px',
                     border: '1px solid hsl(var(--border))',
@@ -192,117 +164,17 @@ export function WeeklyReport({
         </Card>
       </div>
 
-      {weeklyExpenseDetails.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Expense Details</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => toggleAllCategories(weeklyExpenseDetails.length)}
-              >
-                {expandedCategories.size === weeklyExpenseDetails.length
-                  ? 'Collapse All'
-                  : 'Expand All'}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {weeklyExpenseDetails.map((category) => {
-                const isExpanded = expandedCategories.has(category.categoryId)
-                const categoryColor = getCategoryColor(
-                  category.categoryName,
-                  category.color
-                )
-
-                return (
-                  <Card
-                    key={category.categoryId}
-                    className={cn(
-                      'transition-colors',
-                      isExpanded && 'border-primary/40 bg-muted/30'
-                    )}
-                  >
-                    <CardContent className="p-4">
-                      <button
-                        onClick={() => toggleCategory(category.categoryId)}
-                        className="flex w-full flex-col gap-3 text-left"
-                        type="button"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="size-3 rounded-full"
-                              style={{ backgroundColor: categoryColor }}
-                            />
-                            <span className="text-sm font-medium">
-                              {category.categoryName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-right">
-                              <p className="text-sm font-bold">
-                                {formatCurrency(category.amount, currencyCode)}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {pieDenominator
-                                  ? (
-                                      (category.amount / pieDenominator) *
-                                      100
-                                    ).toFixed(1)
-                                  : '0.0'}
-                                %
-                              </p>
-                            </div>
-                            {isExpanded ? (
-                              <ChevronUp className="size-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="size-4 text-muted-foreground" />
-                            )}
-                          </div>
-                        </div>
-                      </button>
-
-                      {isExpanded && category.transactions.length > 0 && (
-                        <div className="mt-4 space-y-1 border-t pt-3">
-                          {category.transactions.map((transaction) => (
-                            <div
-                              key={transaction.id}
-                              className="flex items-center justify-between rounded px-2 py-2 hover:bg-muted"
-                            >
-                              <div className="flex items-center gap-2">
-                                <TrendingDown className="size-3 text-muted-foreground" />
-                                <div>
-                                  <p className="text-xs font-medium">
-                                    {transaction.description}
-                                  </p>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    {formatDateShort(transaction.occurredAt)}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-xs font-semibold">
-                                {formatCurrency(transaction.amount, currencyCode)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+      {weeklyProjection && (
+        <WeeklyBudgetProjectionSection
+          data={weeklyProjection}
+          currencyCode={currencyCode}
+          expenseDetails={weeklyExpenseDetails}
+        />
       )}
 
-      <ReportAnalysisSection
-        summary={summary}
-        insights={insights}
-        suggestions={recommendations}
+      <WeeklyGuidanceSection
+        potentialIssues={potentialIssues}
+        recommendedActions={recommendedActions}
       />
 
       {budgetSuggestions.length > 0 && (

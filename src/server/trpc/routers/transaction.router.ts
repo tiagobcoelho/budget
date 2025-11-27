@@ -51,10 +51,13 @@ export const transactionRouter = router({
   createBulk: householdProcedure
     .input(createBulkTransactionsSchema)
     .mutation(async ({ ctx, input }) => {
+      // Extract userId from first transaction if provided, or use current user
+      const defaultUserId = input.transactions[0]?.userId ?? ctx.user!.id
       return TransactionService.createBulk(
         ctx.householdId!,
         ctx.user!.id,
-        input.transactions
+        input.transactions,
+        defaultUserId
       )
     }),
 

@@ -36,7 +36,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { trpc } from '@/lib/trpc/client'
-import { formatPeriodLabel } from '@/lib/budget/period'
+import { formatReportLabel } from '@/lib/budget/period'
 import { cn } from '@/lib/utils'
 
 const overviewItems = [
@@ -77,7 +77,7 @@ export function AppSidebar() {
   const { data: reports = [] } = trpc.report.list.useQuery({})
   const latestReports = reports.slice(0, 5).map((report) => ({
     id: report.id,
-    title: formatPeriodLabel(new Date(report.startDate)),
+    title: formatReportLabel(new Date(report.startDate), report.period),
     href: `/reports/${report.id}`,
   }))
 

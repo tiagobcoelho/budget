@@ -5,10 +5,16 @@ import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { Sparkles, AlertTriangle, Lightbulb, ChevronRight } from 'lucide-react'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import Link from 'next/link'
 import { trpc } from '@/lib/trpc/client'
 import { BudgetCard } from '@/components/budget-card'
+import { RequiredActionsAlert } from '@/components/required-actions-alert'
 import { endOfMonth, formatISO, startOfMonth } from 'date-fns'
 import { Transaction } from '@/server/trpc/schemas/transaction.schema'
 import { toast } from 'sonner'
@@ -65,34 +71,6 @@ export default function DashboardPage() {
     },
   })
 
-  const formatOpportunityLabel = (startDate: string, endDate: string) => {
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    const monthFormatter = new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-    })
-    const yearFormatter = new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-    })
-    const sameMonth =
-      start.getMonth() === end.getMonth() &&
-      start.getFullYear() === end.getFullYear()
-    const sameYear = start.getFullYear() === end.getFullYear()
-
-    if (sameMonth) {
-      return `${monthFormatter.format(start)} – ${end.getDate()}`
-    }
-
-    if (sameYear) {
-      return `${monthFormatter.format(start)} – ${monthFormatter.format(end)}`
-    }
-
-    return `${monthFormatter.format(start)} ${yearFormatter.format(
-      start
-    )} – ${monthFormatter.format(end)} ${yearFormatter.format(end)}`
-  }
-
   const handleGenerateOpportunity = async (params: {
     period: 'MONTHLY' | 'WEEKLY'
     startDate: string
@@ -128,6 +106,9 @@ export default function DashboardPage() {
         utils.report.getOpportunities.invalidate(),
         utils.report.list.invalidate(),
       ])
+
+      // Navigate to the report page
+      router.push(`/reports/${report.id}`)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to generate report'
@@ -242,18 +223,28 @@ export default function DashboardPage() {
     }
   }, [latestTransactionData])
 
-  // Parse report insights and recommendations
+  const needsTransactionUpdate =
+    lastTransactionInfo.daysAgo !== undefined &&
+    lastTransactionInfo.daysAgo >= 2
+
+  // Parse report narrative data
   const reportData = useMemo(() => {
     if (!latestReport || !latestReport.data) return null
 
     const isInitial = latestReport.isInitial
     const period = latestReport.period
-    const summary = latestReport.data.llm?.summary
-    const recommendations = latestReport.data.llm?.suggestionsText
+    const behaviorPatterns = latestReport.data.llm?.behaviorPatterns ?? []
+    const risks = latestReport.data.llm?.risks ?? []
+    const opportunities = latestReport.data.llm?.opportunities ?? []
+    const potentialIssues = latestReport.data.llm?.potentialIssues ?? []
+    const recommendedActions = latestReport.data.llm?.recommendedActions ?? []
 
     return {
-      summary,
-      recommendations,
+      behaviorPatterns,
+      risks,
+      opportunities,
+      potentialIssues,
+      recommendedActions,
       isInitial,
       period,
     }
@@ -261,11 +252,31 @@ export default function DashboardPage() {
 
   const hasNoBudgets = !budgetsData || budgetsData.length === 0
 
+  const hasHighlights = useMemo(() => {
+    if (!reportData) return false
+    return (
+      (reportData.risks?.length ?? 0) > 0 ||
+      (reportData.opportunities?.length ?? 0) > 0
+    )
+  }, [reportData])
+
   return (
     <DashboardLayout>
       <div className="space-y-6 pb-20 md:pb-6">
-        {/* Latest Report Summary */}
-        {reportData && (
+        {/* Required Actions */}
+        {(hasReportOpportunities || needsTransactionUpdate) && (
+          <RequiredActionsAlert
+            reportOpportunities={reportOpportunities}
+            opportunitiesLoading={opportunitiesLoading}
+            onGenerateOpportunity={handleGenerateOpportunity}
+            isOpportunityPending={isOpportunityPending}
+            showTransactionAlert={needsTransactionUpdate}
+            lastTransactionDaysAgo={lastTransactionInfo.daysAgo}
+          />
+        )}
+
+        {/* Latest Report Highlights */}
+        {reportData && hasHighlights && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-4">
               <div className="flex gap-3">
@@ -276,8 +287,10 @@ export default function DashboardPage() {
                   <div className="mb-4 flex items-center justify-between">
                     <p className="text-sm font-semibold">
                       {reportData.period === 'WEEKLY'
-                        ? "Last Week's Summary"
-                        : "Last Month's Summary"}
+                        ? "Last Week's Watchlist"
+                        : reportData.isInitial
+                          ? 'Initial report highlights'
+                          : "Last Month's Highlights"}
                     </p>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/reports/${latestReport?.id}`}>
@@ -286,162 +299,69 @@ export default function DashboardPage() {
                     </Button>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
-                    {!!reportData.summary?.length && (
-                      <div>
-                        <ul className="list-disc space-y-2 text-sm">
-                          {reportData.summary.map((summaryItem, index) => (
-                            <li key={index}>{summaryItem}</li>
+                    <div className="pt-4 md:pt-0 border-primary/10">
+                      <div className="flex items-center gap-2">
+                        <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-400">
+                          <AlertTriangle className="size-4 " /> Top risks
+                        </p>
+                      </div>
+                      {reportData.risks.length > 0 ? (
+                        <ul className="space-y-3">
+                          {reportData.risks.map((risk) => (
+                            <li key={risk.title}>
+                              <Collapsible className="rounded-lg border border-amber-400/10 bg-amber-400/5 p-2">
+                                <CollapsibleTrigger className="w-full flex items-center gap-2 focus:outline-none group cursor-pointer">
+                                  <p className="text-left text-sm font-semibold">
+                                    {risk.title}
+                                  </p>
+                                  <ChevronRight className="size-3.5 text-amber-400 ml-auto group-data-[state=open]:rotate-90 transition-transform duration-200" />
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="pt-2 text-xs text-muted-foreground">
+                                  {risk.description}
+                                </CollapsibleContent>
+                              </Collapsible>
+                            </li>
                           ))}
                         </ul>
-                      </div>
-                    )}
-                    {!!reportData.recommendations?.length && (
-                      <div className="border-l-0 border-t pt-4 md:border-l md:border-t-0 md:pl-4 md:pt-0 border-primary/10">
-                        <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
-                          <ArrowRight className="size-3.5" />
-                          {reportData.period === 'WEEKLY'
-                            ? "Last Week's Recommendations"
-                            : "Last Month's Recommendations"}
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          No risks identified in this period.
                         </p>
-                        <ul className="list-disc space-y-2 text-sm">
-                          {reportData.recommendations.map(
-                            (recommendation, index) => (
-                              <li key={index} className="ml-4">
-                                {recommendation}
-                              </li>
-                            )
-                          )}
+                      )}
+                    </div>
+
+                    <div className="border-l-0 border-t pt-4 md:border-l md:border-t-0 md:pl-4 md:pt-0 border-primary/10">
+                      <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
+                        <Lightbulb className="size-3.5 text-primary" />
+                        Opportunities
+                      </p>
+                      {reportData.opportunities.length > 0 ? (
+                        <ul className="space-y-3">
+                          {reportData.opportunities.map((opportunity) => (
+                            <li key={opportunity.title}>
+                              <Collapsible className="rounded-lg border border-primary/10 bg-primary/5 p-2">
+                                <CollapsibleTrigger className="w-full flex items-center gap-2 focus:outline-none group cursor-pointer">
+                                  <p className="text-left text-sm font-semibold">
+                                    {opportunity.title}
+                                  </p>
+                                  <ChevronRight className="size-3.5 text-primary ml-auto group-data-[state=open]:rotate-90 transition-transform duration-200" />
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="pt-2 text-xs text-muted-foreground">
+                                  {opportunity.description}
+                                </CollapsibleContent>
+                              </Collapsible>
+                            </li>
+                          ))}
                         </ul>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Report Opportunities */}
-        {hasReportOpportunities && (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="space-y-4 p-4">
-              <div>
-                <p className="text-sm font-semibold text-primary">
-                  Reports ready to generate
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {opportunitiesLoading
-                    ? 'Checking for available reports...'
-                    : 'All transactions are reconciled — generate insights with one tap.'}
-                </p>
-              </div>
-
-              {reportOpportunities?.monthly.length ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">
-                    Monthly
-                  </p>
-                  <div className="space-y-2">
-                    {reportOpportunities.monthly.map((opportunity) => (
-                      <div
-                        key={`monthly-${opportunity.startDate}`}
-                        className="rounded-lg border border-primary/10 bg-background/70 p-4 shadow-sm"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-primary">
-                              {formatOpportunityLabel(
-                                opportunity.startDate,
-                                opportunity.endDate
-                              )}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Covers{' '}
-                              {new Date(
-                                opportunity.startDate
-                              ).toLocaleDateString()}{' '}
-                              –{' '}
-                              {new Date(
-                                opportunity.endDate
-                              ).toLocaleDateString()}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {opportunity.transactionCount} transactions
-                              reviewed
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleGenerateOpportunity({
-                                period: 'MONTHLY',
-                                startDate: opportunity.startDate,
-                                endDate: opportunity.endDate,
-                              })
-                            }
-                            disabled={isOpportunityPending(
-                              'MONTHLY',
-                              opportunity.startDate
-                            )}
-                          >
-                            Generate monthly report
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {reportOpportunities?.weekly ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">
-                    Weekly
-                  </p>
-                  <div className="rounded-lg border border-primary/10 bg-background/70 p-4 shadow-sm">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-primary">
-                          {formatOpportunityLabel(
-                            reportOpportunities.weekly.startDate,
-                            reportOpportunities.weekly.endDate
-                          )}
-                        </p>
+                      ) : (
                         <p className="text-xs text-muted-foreground">
-                          Covers{' '}
-                          {new Date(
-                            reportOpportunities.weekly.startDate
-                          ).toLocaleDateString()}{' '}
-                          –{' '}
-                          {new Date(
-                            reportOpportunities.weekly.endDate
-                          ).toLocaleDateString()}
+                          No opportunities surfaced for this report.
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {reportOpportunities.weekly.transactionCount}{' '}
-                          transactions reviewed
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          handleGenerateOpportunity({
-                            period: 'WEEKLY',
-                            startDate: reportOpportunities.weekly!.startDate,
-                            endDate: reportOpportunities.weekly!.endDate,
-                          })
-                        }
-                        disabled={isOpportunityPending(
-                          'WEEKLY',
-                          reportOpportunities.weekly.startDate
-                        )}
-                      >
-                        Generate weekly report
-                      </Button>
+                      )}
                     </div>
                   </div>
                 </div>
-              ) : null}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -469,7 +389,6 @@ export default function DashboardPage() {
             lastTransactionDaysAgo={lastTransactionInfo.daysAgo}
             allocations={budgetCardData.allocations}
             categoriesWithoutBudgets={categoriesWithoutBudgets}
-            showTransactionAlert={true}
           />
         )}
       </div>

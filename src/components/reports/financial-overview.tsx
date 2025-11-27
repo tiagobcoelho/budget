@@ -73,7 +73,7 @@ export function FinancialOverview({
                 Savings Rate
               </p>
               <p className="mt-2 text-3xl font-bold text-primary">
-                {totals.savingsRate.toFixed(1)}%
+                {(totals.savingsRate * 100).toFixed(1)}%
               </p>
             </CardContent>
           </Card>

@@ -7,6 +7,10 @@ import { toast } from 'sonner'
 import { Upload, FileText, X, Loader2, CheckCircle2 } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Transaction } from '@prisma/client'
+import { UserSelector } from './user-selector'
+import { Label } from '@/components/ui/label'
+import { trpc } from '@/lib/trpc/client'
+import { PDFDocument } from 'pdf-lib'
 
 type UploadedFile = {
   id: string
@@ -14,8 +18,7 @@ type UploadedFile = {
 }
 
 interface ProcessingProgress {
-  currentFileIndex: number
-  currentFileName: string
+  processedPages: number
   currentPage: number
   totalPages: number
   extractedTransactions: number
@@ -25,6 +28,47 @@ interface PdfUploaderProps {
   onTransactionsExtracted: (transactions: Transaction[]) => void
 }
 
+const getFilePageCount = async (file: File): Promise<number> => {
+  const mimeType = file.type || ''
+  const isPdf =
+    mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+
+  if (!isPdf) {
+    return 1
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const pdfDoc = await PDFDocument.load(arrayBuffer, {
+      ignoreEncryption: true,
+    })
+    const count = pdfDoc.getPageCount()
+    return Number.isFinite(count) && count > 0 ? count : 1
+  } catch (error) {
+    console.warn(
+      `Failed to read page count for ${file.name}, defaulting to 1 page`,
+      error
+    )
+    return 1
+  }
+}
+
+const calculateTotalPages = async (files: UploadedFile[]) => {
+  const pageMap = new Map<string, number>()
+  let total = 0
+
+  for (const uploadedFile of files) {
+    const pages = await getFilePageCount(uploadedFile.file)
+    pageMap.set(uploadedFile.id, pages)
+    total += pages
+  }
+
+  return {
+    totalPages: total,
+    pageMap,
+  }
+}
+
 export const PdfUploader: React.FC<PdfUploaderProps> = ({
   onTransactionsExtracted,
 }) => {
@@ -32,6 +76,13 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [progress, setProgress] = useState<ProcessingProgress | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const { data: household } = trpc.household.current.useQuery()
+
+  const soleMember =
+    household?.members?.length === 1 ? household.members[0]?.user : null
+
+  const isSingleMemberHousehold = Boolean(soleMember)
 
   const handleFileAdd = useCallback(
     (file: File) => {
@@ -76,23 +127,47 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
 
     setIsProcessing(true)
     const allTransactions: Transaction[] = []
+    let totalPagesToProcess = 0
+    let processedPagesCount = 0
+    let currentPageNumber = 0
 
     try {
-      // Process files sequentially
-      for (let fileIndex = 0; fileIndex < uploadedFiles.length; fileIndex++) {
-        const uploadedFile = uploadedFiles[fileIndex]
+      const { totalPages, pageMap } = await calculateTotalPages(uploadedFiles)
+      totalPagesToProcess =
+        totalPages > 0 ? totalPages : Math.max(uploadedFiles.length, 1)
 
-        // Initialize progress for this file
+      const syncProgress = () => {
+        const safeTotal =
+          totalPagesToProcess > 0
+            ? Math.max(totalPagesToProcess, processedPagesCount || 0)
+            : Math.max(processedPagesCount || 0, 1)
         setProgress({
-          currentFileIndex: fileIndex,
-          currentFileName: uploadedFile.file.name,
-          currentPage: 0,
-          totalPages: 0,
+          processedPages: processedPagesCount,
+          currentPage: currentPageNumber,
+          totalPages: safeTotal,
           extractedTransactions: allTransactions.length,
         })
+      }
+
+      syncProgress()
+
+      // Process files sequentially
+      // Track cumulative pages from previous files to calculate global page numbers
+      let pagesFromPreviousFiles = 0
+
+      for (let fileIndex = 0; fileIndex < uploadedFiles.length; fileIndex++) {
+        const uploadedFile = uploadedFiles[fileIndex]
+        let currentFileTotalPages = pageMap.get(uploadedFile.id) ?? 1
+        let lastReportedFilePage = 0
+        let fileComplete = false
 
         const formData = new FormData()
         formData.append('file', uploadedFile.file)
+        if (soleMember?.id) {
+          formData.append('userId', soleMember.id)
+        } else if (selectedUserId) {
+          formData.append('userId', selectedUserId)
+        }
 
         const response = await fetch('/api/transactions/upload-pdf', {
           method: 'POST',
@@ -136,32 +211,53 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
               const chunk = JSON.parse(line)
 
               if (chunk.type === 'progress') {
-                // Update progress for current page
-                setProgress((prev) => ({
-                  ...prev!,
-                  currentPage: chunk.data.pageNumber,
-                  totalPages: chunk.data.totalPages,
-                }))
+                if (
+                  typeof chunk.data?.totalPages === 'number' &&
+                  chunk.data.totalPages > 0 &&
+                  chunk.data.totalPages !== currentFileTotalPages
+                ) {
+                  totalPagesToProcess +=
+                    chunk.data.totalPages - currentFileTotalPages
+                  currentFileTotalPages = chunk.data.totalPages
+                }
+
+                if (typeof chunk.data?.pageNumber === 'number') {
+                  const filePageNumber = chunk.data.pageNumber
+                  // Convert file page number to global page number
+                  const globalPageNumber =
+                    pagesFromPreviousFiles + filePageNumber
+                  currentPageNumber = globalPageNumber
+
+                  // Processed pages = pages before the current one
+                  // If we're on page 1 of this file, we've completed 0 pages of this file
+                  // If we're on page 2 of this file, we've completed 1 page of this file
+                  // So processed pages = pagesFromPreviousFiles + (filePageNumber - 1)
+                  processedPagesCount =
+                    pagesFromPreviousFiles + (filePageNumber - 1)
+
+                  lastReportedFilePage = filePageNumber
+                }
+
+                syncProgress()
               } else if (
                 chunk.type === 'transaction' &&
                 chunk.data?.transaction
               ) {
                 allTransactions.push(chunk.data.transaction)
-                // Update progress with new transaction count
-                // Note: transaction chunks include pageNumber but not totalPages
-                setProgress((prev) => ({
-                  ...prev!,
-                  extractedTransactions: allTransactions.length,
-                  currentPage: chunk.data.pageNumber || prev?.currentPage || 0,
-                  // Keep existing totalPages from progress updates
-                  totalPages: prev?.totalPages || 0,
-                }))
+                syncProgress()
               } else if (chunk.type === 'complete') {
-                // File processing complete
-                setProgress((prev) => ({
-                  ...prev!,
-                  extractedTransactions: allTransactions.length,
-                }))
+                fileComplete = true
+                if (currentFileTotalPages === 0) {
+                  const inferredPages = Math.max(lastReportedFilePage, 1)
+                  totalPagesToProcess += inferredPages
+                  currentFileTotalPages = inferredPages
+                }
+                // When file is complete, all pages of this file are processed
+                processedPagesCount =
+                  pagesFromPreviousFiles + currentFileTotalPages
+                currentPageNumber =
+                  pagesFromPreviousFiles + currentFileTotalPages
+                syncProgress()
               } else if (chunk.type === 'error') {
                 throw new Error(
                   chunk.data?.error ||
@@ -179,7 +275,27 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
             }
           }
         }
+
+        if (!fileComplete) {
+          if (currentFileTotalPages === 0) {
+            const inferredPages = Math.max(lastReportedFilePage, 1)
+            totalPagesToProcess += inferredPages
+            currentFileTotalPages = inferredPages
+          }
+          // If file processing ended without completion signal, mark all pages as processed
+          processedPagesCount = pagesFromPreviousFiles + currentFileTotalPages
+          currentPageNumber = pagesFromPreviousFiles + currentFileTotalPages
+          syncProgress()
+        }
+
+        // Update cumulative pages for next file
+        pagesFromPreviousFiles += currentFileTotalPages
       }
+
+      // When all files are done, mark everything as complete
+      processedPagesCount = totalPagesToProcess
+      currentPageNumber = totalPagesToProcess
+      syncProgress()
 
       const fileCount = uploadedFiles.length
       if (allTransactions.length > 0) {
@@ -203,7 +319,7 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
     } finally {
       setIsProcessing(false)
     }
-  }, [uploadedFiles, onTransactionsExtracted])
+  }, [uploadedFiles, onTransactionsExtracted, soleMember?.id, selectedUserId])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -260,6 +376,27 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* User Selector or info text before file selection */}
+        {!isProcessing && (
+          <div className="space-y-2">
+            {!isSingleMemberHousehold && (
+              <>
+                <Label htmlFor="user-selector">Assign transactions to</Label>
+                <UserSelector
+                  value={selectedUserId}
+                  onValueChange={setSelectedUserId}
+                  disabled={isProcessing}
+                  showShared={true}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Select which user these transactions belong to, or choose
+                  &quot;Shared&quot; for joint expenses
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Upload Input Area - Hidden during processing */}
         {!isProcessing && (
           <div
@@ -293,7 +430,7 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
             />
             <Button asChild disabled={isProcessing} variant="outline">
               <label htmlFor="pdf-upload" className="cursor-pointer">
-                Select PDF Files
+                Select Files
               </label>
             </Button>
           </div>
@@ -311,46 +448,42 @@ export const PdfUploader: React.FC<PdfUploaderProps> = ({
               {/* Overall Progress */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">File Progress</span>
+                  <span className="text-muted-foreground">
+                    Overall Progress
+                  </span>
                   <span className="font-medium">
-                    Processing file {progress.currentFileIndex + 1} of{' '}
-                    {uploadedFiles.length}
+                    {progress.totalPages > 0
+                      ? Math.min(
+                          Math.round(
+                            (progress.processedPages / progress.totalPages) *
+                              100
+                          ),
+                          100
+                        )
+                      : 0}
+                    %
                   </span>
                 </div>
                 <Progress
                   value={
-                    ((progress.currentFileIndex + 1) / uploadedFiles.length) *
-                    100
+                    progress.totalPages > 0
+                      ? Math.min(
+                          (progress.processedPages / progress.totalPages) * 100,
+                          100
+                        )
+                      : 0
                   }
                   className="h-2"
                 />
+                <p className="text-xs text-muted-foreground text-right">
+                  {progress.currentPage > 0 &&
+                  progress.currentPage <= progress.totalPages
+                    ? `Processing page ${progress.currentPage} of ${progress.totalPages}`
+                    : progress.processedPages === progress.totalPages
+                      ? `Completed ${progress.totalPages} page${progress.totalPages === 1 ? '' : 's'}`
+                      : `Processing page ${Math.max(progress.currentPage, 1)} of ${progress.totalPages}`}
+                </p>
               </div>
-
-              {/* Current File Info */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Current File</span>
-                  <span className="font-medium truncate ml-2 max-w-[60%]">
-                    {progress.currentFileName}
-                  </span>
-                </div>
-              </div>
-
-              {/* Page Progress */}
-              {progress.totalPages > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Page Progress</span>
-                    <span className="font-medium">
-                      Page {progress.currentPage} of {progress.totalPages}
-                    </span>
-                  </div>
-                  <Progress
-                    value={(progress.currentPage / progress.totalPages) * 100}
-                    className="h-2"
-                  />
-                </div>
-              )}
 
               {/* Extracted Transactions Count */}
               <div className="flex items-center justify-between pt-2 border-t">

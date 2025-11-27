@@ -140,10 +140,10 @@ export default function ReportsPage() {
               Analyze your financial data and trends
             </p>
           </div>
-          <Button onClick={() => setIsGenerateDialogOpen(true)}>
+          {/* <Button onClick={() => setIsGenerateDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Generate Report
-          </Button>
+          </Button> */}
         </div>
 
         {isLoading ? (

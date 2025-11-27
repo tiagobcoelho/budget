@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Calendar, ArrowRight } from 'lucide-react'
 import { format } from 'date-fns'
-import { ReportStatus, ReportPeriod } from '@/lib/types'
+import { ReportStatus, ReportPeriod } from '@prisma/client'
 import Link from 'next/link'
+import { formatReportLabel } from '@/lib/budget/period'
 // import { trpc } from '@/lib/trpc/client'
 
 interface ReportCardProps {
@@ -53,13 +54,16 @@ export function ReportCard({
 }: ReportCardProps) {
   // const { data: preference } = trpc.preference.get.useQuery()
 
+  const reportTitle =
+    period === 'WEEKLY'
+      ? formatReportLabel(startDate, period)
+      : `${periodLabels[period]} Report`
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">
-            {periodLabels[period]} Report
-          </CardTitle>
+          <CardTitle className="text-lg">{reportTitle}</CardTitle>
           <Badge className={statusColors[status]}>{statusLabels[status]}</Badge>
         </div>
       </CardHeader>

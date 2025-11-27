@@ -12,12 +12,23 @@ import {
   BudgetSuggestionStatus,
   type AccountData,
   type BudgetData,
+  type BaseGeneratedReport,
   type CategoryData,
-  type GeneratedReport,
+  type GeneratedReportWithBudgets,
+  type GeneratedReportWithNarratives,
+  type WeeklyGuidanceReport,
+  type ReportGenerationContext,
   type TransactionData,
+  type AugmentedGeneratedReport,
 } from '@/services/report-generation.service/types'
+import {
+  formatFinancialProfileForPrompt,
+  generateUpdatedFinancialProfile,
+  type FinancialProfile,
+} from '@/services/financial-profile.service'
+import { InputJsonValue } from '@prisma/client/runtime/library'
 
-type PeriodicReportGenerator = (
+type PeriodicReportGenerator<TReport extends BaseGeneratedReport> = (
   householdId: string,
   startDate: Date,
   endDate: Date,
@@ -26,20 +37,43 @@ type PeriodicReportGenerator = (
   budgets: BudgetData[],
   accounts: AccountData[],
   currency: string,
-  monthlyTransactions?: TransactionData[]
-) => Promise<GeneratedReport>
+  profileMemory: string,
+  context?: ReportGenerationContext
+) => Promise<AugmentedGeneratedReport<TReport>>
 
-interface HandlerConfig {
+interface HandlerConfig<TReport extends BaseGeneratedReport> {
   period: ReportPeriod
   label: string
-  generateReport: PeriodicReportGenerator
+  generateReport: PeriodicReportGenerator<TReport>
 }
 
-export function createPeriodicReportHandler({
-  period,
-  label,
-  generateReport,
-}: HandlerConfig) {
+function reportHasBudgetSuggestions(
+  report: BaseGeneratedReport
+): report is GeneratedReportWithBudgets {
+  return Array.isArray(
+    (report as Partial<GeneratedReportWithBudgets>).budgetSuggestions
+  )
+}
+
+function reportHasNarratives(
+  report: BaseGeneratedReport
+): report is GeneratedReportWithNarratives {
+  return (
+    'behaviorPatterns' in report ||
+    'risks' in report ||
+    'opportunities' in report
+  )
+}
+
+function reportHasWeeklyGuidance(
+  report: BaseGeneratedReport
+): report is WeeklyGuidanceReport {
+  return 'potentialIssues' in report || 'recommendedActions' in report
+}
+
+export function createPeriodicReportHandler<
+  TReport extends BaseGeneratedReport,
+>({ period, label, generateReport }: HandlerConfig<TReport>) {
   return async function POST(req: NextRequest) {
     try {
       const { userId: clerkId } = await auth()
@@ -113,79 +147,23 @@ export function createPeriodicReportHandler({
           const startDate = new Date(report.startDate)
           const endDate = new Date(report.endDate)
 
-          // For weekly reports, also fetch monthly transactions and budgets for context
-          let monthlyTransactions: TransactionData[] = []
-          let monthStart: Date | null = null
-          let monthEnd: Date | null = null
+          const generationData = await ReportService.getGenerationData({
+            householdId: household.id,
+            period,
+            startDate,
+            endDate,
+          })
 
-          if (period === ReportPeriod.WEEKLY) {
-            // Calculate month boundaries
-            monthStart = new Date(startDate)
-            monthStart.setDate(1)
-            monthStart.setHours(0, 0, 0, 0)
-            monthEnd = new Date(endDate)
-            monthEnd.setMonth(monthEnd.getMonth() + 1)
-            monthEnd.setDate(0)
-            monthEnd.setHours(23, 59, 59, 999)
-
-            const monthlyTxns = await db.transaction.findMany({
-              where: {
-                householdId: household.id,
-                occurredAt: { gte: monthStart, lte: monthEnd },
-              },
-              include: { category: true, fromAccount: true, toAccount: true },
-              orderBy: { occurredAt: 'desc' },
-            })
-
-            monthlyTransactions = monthlyTxns.map((t) => ({
-              id: t.id,
-              type: t.type,
-              amount: Number(t.amount),
-              occurredAt: t.occurredAt.toISOString(),
-              description: t.description,
-              categoryId: t.categoryId,
-              categoryName: t.category?.name || null,
-            }))
-          }
-
-          const [transactions, categories, accounts, budgets] =
-            await Promise.all([
-              db.transaction.findMany({
-                where: {
-                  householdId: household.id,
-                  occurredAt: { gte: startDate, lte: endDate },
-                },
-                include: { category: true, fromAccount: true, toAccount: true },
-                orderBy: { occurredAt: 'desc' },
-              }),
-              db.category.findMany({ where: { householdId: household.id } }),
-              db.account.findMany({ where: { householdId: household.id } }),
-              // For weekly reports, fetch budgets for the entire month, not just the week
-              db.budget.findMany({
-                where: {
-                  householdId: household.id,
-                  AND: [
-                    {
-                      startDate: {
-                        lte:
-                          period === ReportPeriod.WEEKLY && monthEnd
-                            ? monthEnd
-                            : endDate,
-                      },
-                    },
-                    {
-                      endDate: {
-                        gte:
-                          period === ReportPeriod.WEEKLY && monthStart
-                            ? monthStart
-                            : startDate,
-                      },
-                    },
-                  ],
-                },
-                include: { category: true },
-              }),
-            ])
+          const {
+            transactions,
+            categories,
+            accounts,
+            budgets,
+            monthlyTransactions,
+            previousPeriodTransactions,
+            rollingTransactions,
+            financialProfile: householdFinancialProfile,
+          } = generationData
 
           const incompleteTransactions = transactions.filter((t) => {
             if (t.type === 'EXPENSE') {
@@ -213,7 +191,12 @@ export function createPeriodicReportHandler({
           const snapshot = await ReportService.computeSnapshot(
             household.id,
             startDate,
-            endDate
+            endDate,
+            {
+              transactions,
+              categories,
+              budgets,
+            }
           )
 
           const transactionData: TransactionData[] = transactions.map((t) => ({
@@ -249,6 +232,25 @@ export function createPeriodicReportHandler({
               amount: Number(b.amount),
             }))
 
+          const existingFinancialProfile =
+            (householdFinancialProfile as FinancialProfile | null) ?? null
+          const profileMemory = formatFinancialProfileForPrompt(
+            existingFinancialProfile
+          )
+
+          const reportContext =
+            period === ReportPeriod.WEEKLY
+              ? {
+                  monthlyTransactions,
+                  rollingTransactions,
+                }
+              : period === ReportPeriod.MONTHLY
+                ? {
+                    previousPeriodTransactions,
+                    rollingTransactions,
+                  }
+                : undefined
+
           const generatedContent = await generateReport(
             household.id,
             startDate,
@@ -258,32 +260,71 @@ export function createPeriodicReportHandler({
             budgetData,
             accountData,
             currency,
-            period === ReportPeriod.WEEKLY ? monthlyTransactions : undefined
+            profileMemory,
+            reportContext
           )
 
-          const budgetSuggestions =
-            generatedContent?.budgetSuggestions?.map((suggestion) => ({
-              ...suggestion,
-              status: suggestion.status ?? BudgetSuggestionStatus.PENDING,
-            })) ?? []
+          const budgetSuggestions = reportHasBudgetSuggestions(generatedContent)
+            ? generatedContent.budgetSuggestions.map((suggestion) => ({
+                ...suggestion,
+                status: suggestion.status ?? BudgetSuggestionStatus.PENDING,
+              }))
+            : []
 
           const data: ReportData = {
             totals: snapshot.totals,
             categories: snapshot.categories,
             llm: {
-              summary: generatedContent?.summary ?? [],
-              insights: generatedContent?.insights ?? [],
-              suggestionsText: generatedContent?.recommendations ?? [],
               budgetSuggestions,
+              behaviorPatterns: reportHasNarratives(generatedContent)
+                ? (generatedContent.behaviorPatterns ?? null)
+                : null,
+              risks: reportHasNarratives(generatedContent)
+                ? (generatedContent.risks ?? null)
+                : null,
+              opportunities: reportHasNarratives(generatedContent)
+                ? (generatedContent.opportunities ?? null)
+                : null,
+              potentialIssues: reportHasWeeklyGuidance(generatedContent)
+                ? (generatedContent.potentialIssues ?? null)
+                : null,
+              recommendedActions: reportHasWeeklyGuidance(generatedContent)
+                ? (generatedContent.recommendedActions ?? null)
+                : null,
             },
             meta: {
               currencyCode: currency,
               label,
             },
+            analytics: generatedContent?.analytics,
           }
 
           reportDataSchema.parse(data)
           await ReportService.setData(reportId, data, snapshot.transactionCount)
+
+          try {
+            const updatedProfile = await generateUpdatedFinancialProfile({
+              existingProfile: existingFinancialProfile,
+              startDate,
+              endDate,
+              currency,
+              transactions: transactionData,
+              categories: categoryData,
+              budgets: budgetData,
+              accounts: accountData,
+              householdName: household.name,
+            })
+
+            await db.household.update({
+              where: { id: household.id },
+              data: { financialProfile: updatedProfile as InputJsonValue },
+            })
+          } catch (profileError) {
+            console.error(
+              'Failed to refresh household financial profile',
+              profileError
+            )
+          }
 
           await ReportService.updateStatus(reportId, 'COMPLETED')
         } catch (error) {

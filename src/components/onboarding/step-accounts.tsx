@@ -73,14 +73,6 @@ const PRESET_ACCOUNTS = [
   },
 ]
 
-const DEFAULT_ACCOUNTS = [
-  { type: 'CASH' as const, label: 'Current / Checking' },
-  { type: 'SAVINGS' as const, label: 'Savings' },
-  { type: 'INVESTMENT' as const, label: 'Investments' },
-  { type: 'CREDIT' as const, label: 'Credit Card / Debt' },
-  { type: 'OTHER' as const, label: 'Other' },
-]
-
 const accountSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, 'Account name is required'),
@@ -144,11 +136,11 @@ export function StepAccounts({ onComplete }: StepAccountsProps) {
       accountsMap.set(key, { id: acc.id, name: acc.name, type: acc.type })
     })
 
-    // Add default accounts (they won't overwrite existing ones with same key)
-    DEFAULT_ACCOUNTS.forEach((acc) => {
-      const key = `${acc.label}-${acc.type}`
+    // Add default preset accounts (they won't overwrite existing ones with same key)
+    PRESET_ACCOUNTS.forEach((acc) => {
+      const key = `${acc.name}-${acc.type}`
       if (!accountsMap.has(key)) {
-        accountsMap.set(key, { name: acc.label, type: acc.type })
+        accountsMap.set(key, { name: acc.name, type: acc.type })
       }
     })
 
@@ -162,7 +154,7 @@ export function StepAccounts({ onComplete }: StepAccountsProps) {
   const form = useForm<AccountsFormValues>({
     resolver: zodResolver(accountsFormSchema),
     defaultValues: {
-      accounts: existingAccounts || [],
+      accounts: initialAccounts,
       customAccountName: '',
       customAccountType: 'OTHER',
     },
@@ -364,19 +356,24 @@ export function StepAccounts({ onComplete }: StepAccountsProps) {
   // Update allAccounts when initialAccounts changes (when existingAccounts loads)
   useEffect(() => {
     setAllAccounts(initialAccounts)
-    // Only update form if it hasn't been initialized yet (accounts array is empty)
-    if (existingAccounts?.length !== selectedAccounts.length) {
+
+    if (existingAccounts && existingAccounts.length > 0) {
       form.setValue(
         'accounts',
-        existingAccounts?.map((account) => ({
+        existingAccounts.map((account) => ({
           id: account.id,
           name: account.name,
           type: account.type,
-        })) || []
+        }))
       )
+      return
+    }
+
+    if (!existingAccounts || existingAccounts.length === 0) {
+      form.setValue('accounts', initialAccounts)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingAccounts])
+  }, [existingAccounts, initialAccounts])
 
   return (
     <Form {...form}>

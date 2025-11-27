@@ -1,9 +1,10 @@
 'use client'
 
 import { BudgetCard } from '@/components/budget-card'
-import { ReportAnalysisSection } from '@/components/reports/report-analysis-section'
 import { FinancialOverview } from '@/components/reports/financial-overview'
 import { BudgetSuggestionCard } from '@/components/reports/budget-suggestion-card'
+import { BehaviorPatternsSection } from '@/components/reports/monthly/behavior-patterns-section'
+import { RisksOpportunitiesSection } from '@/components/reports/monthly/risks-opportunities-section'
 import {
   BudgetSuggestion,
   ReportData,
@@ -28,13 +29,13 @@ export function InitialReport({
 }: InitialReportProps) {
   const totals = reportData?.totals
   const categories = reportData?.categories ?? []
-  const summary = reportData?.llm?.summary ?? []
-  const insights = reportData?.llm?.insights ?? []
-  const suggestionsText = reportData?.llm?.suggestionsText ?? []
   const budgetSuggestions =
     reportData?.llm?.budgetSuggestions?.filter(
       (suggestion): suggestion is BudgetSuggestion => !!suggestion.id
     ) ?? []
+  const behaviorPatterns = reportData?.llm?.behaviorPatterns ?? []
+  const risks = reportData?.llm?.risks ?? []
+  const opportunities = reportData?.llm?.opportunities ?? []
 
   const totalSpent = totals?.expenses ?? 0
 
@@ -50,14 +51,14 @@ export function InitialReport({
           remaining={0}
           categories={categories}
           title="Your Expenses"
-          showTransactionAlert={false}
         />
       </div>
 
-      <ReportAnalysisSection
-        summary={summary}
-        insights={insights}
-        suggestions={suggestionsText}
+      <BehaviorPatternsSection behaviorPatterns={behaviorPatterns} />
+
+      <RisksOpportunitiesSection
+        risks={risks ?? []}
+        opportunities={opportunities ?? []}
       />
 
       {!!budgetSuggestions.length && (

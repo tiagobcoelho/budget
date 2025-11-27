@@ -1,24 +1,8 @@
 import { db } from '@/db'
-
-const DEFAULT_EXPENSE_CATEGORIES = [
-  { name: 'Housing', color: '#3b82f6', icon: '🏠' },
-  { name: 'Transportation', color: '#f97316', icon: '🚗' },
-  { name: 'Food & Dining', color: '#22c55e', icon: '🍔' },
-  { name: 'Health & Fitness', color: '#ec4899', icon: '💪' },
-  { name: 'Entertainment & Leisure', color: '#8b5cf6', icon: '🎬' },
-  { name: 'Shopping & Personal', color: '#eab308', icon: '🛍️' },
-  { name: 'Family & Education', color: '#ef4444', icon: '👨‍👩‍👧‍👦' },
-  { name: 'Savings & Investments', color: '#22c55e', icon: '💰' },
-  { name: 'Bills & Utilities', color: '#6b7280', icon: '💡' },
-  { name: 'Miscellaneous', color: '#6b7280', icon: '📦' },
-]
-
-const DEFAULT_INCOME_CATEGORIES = [
-  { name: 'Salary', color: '#22c55e', icon: '💼' },
-  { name: 'Freelance & Side Income', color: '#3b82f6', icon: '💻' },
-  { name: 'Investments', color: '#8b5cf6', icon: '📈' },
-  { name: 'Gifts & Other Income', color: '#eab308', icon: '🎁' },
-]
+import {
+  DEFAULT_EXPENSE_CATEGORIES,
+  DEFAULT_INCOME_CATEGORIES,
+} from '@/lib/category-constants'
 
 export class CategoryService {
   static async list(householdId: string) {

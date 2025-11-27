@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { WeeklyReport } from './weekly-report'
 import { MonthlyReport } from './monthly-report'
 import { InitialReport } from './initial-report'
+import { ReportGeneratingState } from './report-generating-state'
 import type { TypedReport } from '@/services/report.service'
 
 interface ReportDetailsProps {
@@ -55,16 +56,16 @@ export function ReportDetails({ report }: ReportDetailsProps) {
     })
   }
 
+  if (report.status === 'GENERATING') {
+    return <ReportGeneratingState />
+  }
+
   if (report.status !== 'COMPLETED') {
     return (
       <Card>
         <CardContent className="p-6">
           <div className="text-center">
-            <p className="text-muted-foreground">
-              {report.status === 'GENERATING'
-                ? 'Report is being generated...'
-                : 'Report is not ready yet'}
-            </p>
+            <p className="text-muted-foreground">Report is not ready yet</p>
           </div>
         </CardContent>
       </Card>

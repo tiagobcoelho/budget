@@ -28,39 +28,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ArrowRight, Plus } from 'lucide-react'
 import { trpc } from '@/lib/trpc/client'
 import { toast } from 'sonner'
-
-const PRESET_EXPENSE_CATEGORIES = [
-  { id: 'groceries', name: 'Groceries', color: '#10b981' },
-  { id: 'transport', name: 'Transport', color: '#3b82f6' },
-  { id: 'bills', name: 'Bills & Utilities', color: '#f59e0b' },
-  { id: 'entertainment', name: 'Entertainment', color: '#8b5cf6' },
-  { id: 'shopping', name: 'Shopping', color: '#ec4899' },
-  { id: 'health', name: 'Health & Fitness', color: '#ef4444' },
-  { id: 'dining', name: 'Dining Out', color: '#f97316' },
-  { id: 'education', name: 'Education', color: '#06b6d4' },
-]
-
-const PRESET_INCOME_CATEGORIES = [
-  { id: 'salary', name: 'Salary', color: '#10b981' },
-  { id: 'freelance', name: 'Freelance', color: '#3b82f6' },
-  { id: 'investments', name: 'Investments', color: '#8b5cf6' },
-  { id: 'gifts', name: 'Gifts', color: '#ec4899' },
-]
-
-const SUGGESTED_CATEGORIES = [
-  { name: 'Housing', type: 'EXPENSE' as const },
-  { name: 'Food & Dining', type: 'EXPENSE' as const },
-  { name: 'Transport', type: 'EXPENSE' as const },
-  { name: 'Shopping', type: 'EXPENSE' as const },
-  { name: 'Health', type: 'EXPENSE' as const },
-  { name: 'Entertainment', type: 'EXPENSE' as const },
-  { name: 'Bills', type: 'EXPENSE' as const },
-  { name: 'Miscellaneous', type: 'EXPENSE' as const },
-  { name: 'Salary', type: 'INCOME' as const },
-  { name: 'Freelance', type: 'INCOME' as const },
-  { name: 'Investments', type: 'INCOME' as const },
-  { name: 'Savings', type: 'INCOME' as const },
-]
+import {
+  DEFAULT_EXPENSE_CATEGORIES,
+  DEFAULT_INCOME_CATEGORIES,
+} from '@/lib/category-constants'
 
 const categorySchema = z.object({
   id: z.string().optional(),
@@ -86,6 +57,39 @@ export function StepCategories({ onComplete }: StepCategoriesProps) {
   const utils = trpc.useUtils()
   const { data: existingCategories } = trpc.category.list.useQuery()
   const updateStep = trpc.user.updateOnboardingStep.useMutation()
+
+  // Transform preset categories to include IDs for frontend use
+  const PRESET_EXPENSE_CATEGORIES = useMemo(
+    () =>
+      DEFAULT_EXPENSE_CATEGORIES.map((cat) => ({
+        id: cat.name.toLowerCase().replace(/\s+/g, '-').replace(/&/g, ''),
+        name: cat.name,
+        color: cat.color,
+      })),
+    []
+  )
+
+  const PRESET_INCOME_CATEGORIES = useMemo(
+    () =>
+      DEFAULT_INCOME_CATEGORIES.map((cat) => ({
+        id: cat.name.toLowerCase().replace(/\s+/g, '-').replace(/&/g, ''),
+        name: cat.name,
+        color: cat.color,
+      })),
+    []
+  )
+
+  // Derive suggested categories from presets for merging with existing categories
+  const SUGGESTED_CATEGORIES = useMemo(() => {
+    const suggested: Array<{ name: string; type: 'EXPENSE' | 'INCOME' }> = []
+    DEFAULT_EXPENSE_CATEGORIES.forEach((cat) => {
+      suggested.push({ name: cat.name, type: 'EXPENSE' })
+    })
+    DEFAULT_INCOME_CATEGORIES.forEach((cat) => {
+      suggested.push({ name: cat.name, type: 'INCOME' })
+    })
+    return suggested
+  }, [])
 
   const deleteCategories = trpc.category.deleteBulk.useMutation({
     onSuccess: () => {
@@ -133,7 +137,7 @@ export function StepCategories({ onComplete }: StepCategoriesProps) {
     })
 
     return Array.from(categoriesMap.values())
-  }, [existingCategories])
+  }, [existingCategories, SUGGESTED_CATEGORIES])
 
   // Initialize all categories state with initial categories
   const [allCategories, setAllCategories] =

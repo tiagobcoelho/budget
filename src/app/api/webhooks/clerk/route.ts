@@ -88,6 +88,26 @@ export async function POST(req: Request) {
 
       // Don't create default categories or accounts - user will create them during onboarding
 
+      // Check for pending invites (groundwork for acceptance flow)
+      try {
+        const { InviteService } = await import('@/services/invite.service')
+        const pendingInvites = await InviteService.checkPendingInvitesForEmail(
+          user.email
+        )
+        if (pendingInvites.length > 0) {
+          console.log(
+            `Found ${pendingInvites.length} pending invite(s) for user:`,
+            user.id,
+            user.email
+          )
+          // Full acceptance flow can be implemented later
+          // For now, just log the invites
+        }
+      } catch (inviteError) {
+        // Don't fail user creation if invite check fails
+        console.error('Error checking invites:', inviteError)
+      }
+
       console.log('User created successfully:', user.id)
     } catch (error) {
       console.error('Error creating user:', error)

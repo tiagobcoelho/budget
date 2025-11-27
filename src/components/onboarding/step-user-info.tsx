@@ -38,13 +38,35 @@ const CURRENCIES = [
   { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
 ]
 
-const userInfoSchema = z.object({
-  firstName: z.string().min(1, 'Name is required'),
-  lastName: z.string().optional(),
-  currency: z.string().length(3, 'Please select a currency'),
-  budgetStartDay: z.number().min(1).max(31),
-  country: z.string().optional(),
-})
+const userInfoSchema = z
+  .object({
+    firstName: z.string().min(1, 'Name is required'),
+    lastName: z.string().optional(),
+    currency: z.string().length(3, 'Please select a currency'),
+    budgetStartDay: z.number().min(1).max(31),
+    country: z.string().optional(),
+    accountType: z.enum(['single', 'couple']),
+    partnerFirstName: z.string().optional(),
+    partnerLastName: z.string().optional(),
+    partnerEmail: z.string().email().optional().or(z.literal('')),
+  })
+  .refine(
+    (data) => {
+      if (data.accountType === 'couple') {
+        return (
+          data.partnerFirstName &&
+          data.partnerFirstName.trim().length > 0 &&
+          data.partnerEmail &&
+          data.partnerEmail.trim().length > 0
+        )
+      }
+      return true
+    },
+    {
+      message: 'Partner first name and email are required for couples',
+      path: ['partnerEmail'],
+    }
+  )
 
 type UserInfoFormValues = z.infer<typeof userInfoSchema>
 
@@ -63,6 +85,7 @@ export function StepUserInfo({ onComplete, initialData }: StepUserInfoProps) {
   const updateProfile = trpc.user.updateProfile.useMutation()
   const updatePreference = trpc.preference.update.useMutation()
   const updateStep = trpc.user.updateOnboardingStep.useMutation()
+  const createCoupleHousehold = trpc.household.createCouple.useMutation()
 
   const form = useForm<UserInfoFormValues>({
     resolver: zodResolver(userInfoSchema),
@@ -72,28 +95,44 @@ export function StepUserInfo({ onComplete, initialData }: StepUserInfoProps) {
       currency:
         preference?.defaultCurrencyCode || initialData?.currency || 'USD',
       budgetStartDay: (preference?.budgetStartDay as number | undefined) ?? 1,
+      accountType: 'single',
+      partnerFirstName: '',
+      partnerLastName: '',
+      partnerEmail: '',
     },
   })
 
-  const onSubmit = async (values: UserInfoFormValues) => {
-    // Check if data has changed compared to existing data
-    const firstNameChanged =
-      (user?.firstName || '').trim() !== values.firstName.trim()
-    const lastNameChanged =
-      (user?.lastName || '').trim() !== (values.lastName || '').trim()
-    const currencyChanged =
-      (preference?.defaultCurrencyCode || 'USD') !== values.currency
-    const budgetStartDayChanged =
-      (preference?.budgetStartDay as number | undefined) ??
-      1 !== values.budgetStartDay
+  const accountType = form.watch('accountType')
 
-    // If nothing changed, just advance step without saving
-    if (
-      !firstNameChanged &&
-      !lastNameChanged &&
-      !currencyChanged &&
-      !budgetStartDayChanged
-    ) {
+  const onSubmit = async (values: UserInfoFormValues) => {
+    try {
+      // Save user profile and preferences
+      await Promise.all([
+        updateProfile.mutateAsync({
+          firstName: values.firstName.trim(),
+          lastName: values.lastName?.trim() || undefined,
+        }),
+        updatePreference.mutateAsync({
+          defaultCurrencyCode: values.currency,
+          budgetStartDay: values.budgetStartDay,
+        }),
+      ])
+
+      // Create household based on account type
+      if (values.accountType === 'couple') {
+        // Create couple household with invite
+        await createCoupleHousehold.mutateAsync({
+          partnerEmail: values.partnerEmail!.trim(),
+          partnerFirstName: values.partnerFirstName!.trim(),
+          partnerLastName: values.partnerLastName?.trim(),
+        })
+        toast.success('Couple household created and invite sent')
+      } else {
+        // Create single household (this will be done automatically when needed)
+        // The household will be created when first accessed
+      }
+
+      // Advance to next step
       updateStep.mutate(
         { step: 2 },
         {
@@ -105,23 +144,6 @@ export function StepUserInfo({ onComplete, initialData }: StepUserInfoProps) {
           },
         }
       )
-      return
-    }
-
-    // Data has changed, save it
-    try {
-      await Promise.all([
-        updateProfile.mutateAsync({
-          firstName: values.firstName.trim(),
-          lastName: values.lastName?.trim() || undefined,
-        }),
-        updatePreference.mutateAsync({
-          defaultCurrencyCode: values.currency,
-          budgetStartDay: values.budgetStartDay,
-        }),
-      ])
-      toast.success('User information saved')
-      onComplete()
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -134,7 +156,8 @@ export function StepUserInfo({ onComplete, initialData }: StepUserInfoProps) {
   const isLoading =
     updateProfile.isPending ||
     updatePreference.isPending ||
-    updateStep.isPending
+    updateStep.isPending ||
+    createCoupleHousehold.isPending
 
   return (
     <div className="space-y-8">
@@ -149,6 +172,109 @@ export function StepUserInfo({ onComplete, initialData }: StepUserInfoProps) {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Account Type Selection */}
+          <FormField
+            control={form.control}
+            name="accountType"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Account Type</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  disabled={isLoading}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="single">Single</SelectItem>
+                    <SelectItem value="couple">Couple</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Are you managing finances alone or with a partner?
+                </p>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Partner Info (shown when couple is selected) */}
+          {accountType === 'couple' && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+              <h3 className="text-sm font-semibold">Partner Information</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="partnerFirstName"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel htmlFor="partnerFirstName">
+                        Partner First Name
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          id="partnerFirstName"
+                          placeholder="Jane"
+                          {...field}
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="partnerLastName"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel htmlFor="partnerLastName">
+                        Partner Last Name
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          id="partnerLastName"
+                          placeholder="Doe"
+                          {...field}
+                          disabled={isLoading}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="partnerEmail"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel htmlFor="partnerEmail">Partner Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        id="partnerEmail"
+                        type="email"
+                        placeholder="partner@example.com"
+                        {...field}
+                        disabled={isLoading}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      We&apos;ll send an invite to this email address
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          )}
+
           <div className="grid gap-6 sm:grid-cols-2">
             <FormField
               control={form.control}

@@ -5,6 +5,20 @@ export interface AccountListInput {
 }
 
 export class AccountService {
+  private static async getSingleMemberUserId(
+    householdId: string
+  ): Promise<string | null> {
+    const members = await db.householdMember.findMany({
+      where: { householdId },
+      select: { userId: true },
+    })
+
+    if (members.length === 1) {
+      return members[0].userId
+    }
+    return null
+  }
+
   static async list(householdId: string, input?: AccountListInput) {
     const where = {
       householdId,
@@ -91,11 +105,22 @@ export class AccountService {
       type: 'CASH' | 'SAVINGS' | 'INVESTMENT' | 'CREDIT' | 'OTHER'
       currencyCode?: string
       initialBalance?: number
+      userId?: string | null
     }
   ) {
+    let resolvedUserId =
+      typeof data.userId === 'undefined' ? null : (data.userId ?? null)
+    if (resolvedUserId === null) {
+      const singleMemberUserId = await this.getSingleMemberUserId(householdId)
+      if (singleMemberUserId) {
+        resolvedUserId = singleMemberUserId
+      }
+    }
+
     return db.account.create({
       data: {
         householdId,
+        userId: resolvedUserId,
         name: data.name,
         type: data.type,
         currencyCode: data.currencyCode ?? 'EUR',
@@ -112,8 +137,20 @@ export class AccountService {
       type: 'CASH' | 'SAVINGS' | 'INVESTMENT' | 'CREDIT' | 'OTHER'
       currencyCode: string
       initialBalance: number
+      userId?: string | null
     }>
   ) {
+    let userIdUpdateValue: string | null | undefined
+    if ('userId' in data) {
+      userIdUpdateValue = data.userId ?? null
+      if (data.userId === null) {
+        const singleMemberUserId = await this.getSingleMemberUserId(householdId)
+        if (singleMemberUserId) {
+          userIdUpdateValue = singleMemberUserId
+        }
+      }
+    }
+
     const updated = await db.account.updateMany({
       where: { id, householdId },
       data: {
@@ -122,6 +159,9 @@ export class AccountService {
         ...('currencyCode' in data ? { currencyCode: data.currencyCode } : {}),
         ...('initialBalance' in data
           ? { initialBalance: data.initialBalance }
+          : {}),
+        ...(typeof userIdUpdateValue !== 'undefined'
+          ? { userId: userIdUpdateValue }
           : {}),
         updatedAt: new Date(),
       },

@@ -1,5 +1,6 @@
 import { db } from '@/db'
 import { HouseholdRole } from '@prisma/client'
+import { InviteService } from './invite.service'
 
 export interface HouseholdWithMembers {
   id: string
@@ -422,5 +423,85 @@ export class HouseholdService {
 
     // Add as member
     await this.addMember(householdId, user.id, 'MEMBER')
+  }
+
+  /**
+   * Create a couple household with seatLimit=2 and invite partner
+   */
+  static async createCoupleHousehold(
+    userId: string,
+    partnerEmail: string,
+    partnerFirstName: string,
+    partnerLastName?: string
+  ): Promise<HouseholdWithMembers> {
+    // Check if user already has a household
+    const existing = await this.getByUserId(userId)
+    if (existing) {
+      throw new Error('User already has a household')
+    }
+
+    // Get user info for household name
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, email: true },
+    })
+
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    // Create household name from both users' names
+    const userDisplayName = user.firstName || user.email
+    const partnerDisplayName = partnerFirstName || partnerEmail
+    const householdName = `${userDisplayName} & ${partnerDisplayName}'s Household`
+
+    // Create couple household with seatLimit=2
+    const household = await db.household.create({
+      data: {
+        name: householdName,
+        seatLimit: 2,
+        members: {
+          create: {
+            userId,
+            role: 'OWNER',
+            joinedAt: new Date(),
+          },
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    // Create invite for partner
+    await InviteService.createInvite(household.id, partnerEmail, userId)
+
+    return {
+      id: household.id,
+      name: household.name,
+      seatLimit: household.seatLimit,
+      stripeCustomerId: household.stripeCustomerId,
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
+      members: household.members.map((m) => ({
+        id: m.id,
+        role: m.role,
+        invitedAt: m.invitedAt,
+        joinedAt: m.joinedAt,
+        user: m.user,
+      })),
+    }
   }
 }
