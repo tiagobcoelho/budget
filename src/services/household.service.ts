@@ -431,8 +431,7 @@ export class HouseholdService {
   static async createCoupleHousehold(
     userId: string,
     partnerEmail: string,
-    partnerFirstName: string,
-    partnerLastName?: string
+    partnerFirstName: string
   ): Promise<HouseholdWithMembers> {
     // Check if user already has a household
     const existing = await this.getByUserId(userId)
