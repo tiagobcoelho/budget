@@ -34,7 +34,6 @@ interface TransactionGroupCardProps {
 export function TransactionGroupCard({
   parentTransaction,
   duplicateTransactions,
-  allowDelete = false,
 }: TransactionGroupCardProps) {
   const utils = trpc.useUtils()
 
@@ -59,7 +58,6 @@ export function TransactionGroupCard({
         <div className="border-b border-border/50">
           <TransactionCard
             transaction={parentTransaction}
-            allowDelete={allowDelete}
             noCardWrapper={true}
           />
         </div>
@@ -80,7 +78,6 @@ export function TransactionGroupCard({
             </div>
             <TransactionCard
               transaction={duplicate}
-              allowDelete={true}
               noCardWrapper={true}
               showDuplicateActions={true}
               onUnlink={() => handleUnlink(duplicate.id)}
