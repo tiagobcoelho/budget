@@ -28,7 +28,6 @@ type TransactionWithRelations = Transaction & {
 interface TransactionGroupCardProps {
   parentTransaction: TransactionWithRelations
   duplicateTransactions: TransactionWithRelations[]
-  allowDelete?: boolean
 }
 
 export function TransactionGroupCard({

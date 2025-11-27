@@ -243,8 +243,7 @@ export const householdRouter = router({
       return HouseholdService.createCoupleHousehold(
         ctx.user.id,
         input.partnerEmail,
-        input.partnerFirstName,
-        input.partnerLastName
+        input.partnerFirstName
       )
     }),
 })
